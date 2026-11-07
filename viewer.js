@@ -215,7 +215,8 @@ function render() {
     $('bigPlay').hidden = true;
   } else if (isShot()) {
     stateEl.hidden = true;
-    const src = driveMode ? driveMedia(rec.video?.id || videoParam) : `/api/recordings/${encodeURIComponent(id)}/image`;
+    // Local: the version query shows edits made in the editor.
+    const src = driveMode ? driveMedia(rec.video?.id || videoParam) : `/api/recordings/${encodeURIComponent(id)}/image?v=${encodeURIComponent(rec.updatedAt || '')}`;
     if ($('shot').getAttribute('src') !== src) $('shot').src = src;
     $('shotLink').href = src;
     $('download').href = driveMode ? `https://drive.google.com/uc?export=download&id=${encodeURIComponent(rec.video?.id || videoParam)}` : src;
@@ -511,6 +512,7 @@ function setupShot() {
   $('shotLink').hidden = false;
   $('stage').classList.add('is-shot');
   $('copyAtTime').hidden = true;
+  if (!driveMode) $('annotate').hidden = false;
   for (const t of ['steps', 'console', 'network']) document.querySelector(`[data-tab="${t}"]`).hidden = true;
   if (!['info', 'report'].includes(location.hash.slice(1))) document.querySelector('[data-tab="info"]').click();
   $('shot').addEventListener('error', () => {
@@ -1356,6 +1358,34 @@ if (!driveMode) {
     } finally {
       btn.querySelector('span:last-child').textContent = 'Create issue';
     }
+  });
+}
+
+// Back from the editor: pick up the new image, title and description.
+if (!driveMode) {
+  window.addEventListener('focus', async () => {
+    if (!isShot()) return;
+    const r = await fetchRecording().catch(() => null);
+    if (!r || r.updatedAt === rec.updatedAt) return;
+    rec = { ...rec, ...r };
+    render();
+  });
+}
+
+// ---------------------------------------------------------------- annotate (screenshots, local server)
+// The editor lives in the extension; its content script on this page opens it.
+if (!driveMode) {
+  $('annotate').addEventListener('click', () => {
+    let answered = false;
+    const onAck = (e) => {
+      if (e.source === window && e.data?.source === 'bugsnap-ext' && e.data.type === 'annotate-ack') answered = true;
+    };
+    window.addEventListener('message', onAck);
+    window.postMessage({ source: 'bugsnap-page', type: 'annotate', id }, location.origin);
+    setTimeout(() => {
+      window.removeEventListener('message', onAck);
+      if (!answered) flash($('annotate'), 'warning-circle', 'Needs the extension');
+    }, 900);
   });
 }
 
