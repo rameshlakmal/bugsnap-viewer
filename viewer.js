@@ -385,9 +385,9 @@ function setCount(name, n, bad = 0, noun = '') {
   badge.dataset.tip = `${bad} ${noun}${noun === 'error' && bad !== 1 ? 's' : ''}`;
 }
 
-function row(ev, { cls = '', glyph, body }) {
+function row(ev, { cls = '', glyph, tone = '', body }) {
   const off = offsetOf(ev);
-  const li = h('li', { class: cls, onclick: () => seek(off - 0.5) }, h('span', { class: 't' }, fmt(off)), icon(glyph, 'glyph'), h('div', { class: 'body' }, ...body));
+  const li = h('li', { class: cls, onclick: () => seek(off - 0.5) }, h('span', { class: 't' }, fmt(off)), icon(glyph, `glyph${tone ? ` tone-${tone}` : ''}`), h('div', { class: 'body' }, ...body));
   li._off = off;
   li._ev = ev;
   return li;
@@ -399,10 +399,14 @@ function empty(iconName, text) {
 
 const ACTION_ICON = { click: 'cursor-click', input: 'keyboard', key: 'keyboard', select: 'list-checks', submit: 'check', upload: 'folder-open' };
 
+// Each kind of step gets its own soft colour so the list is easy to scan.
+const ACTION_TONE = { click: 'click', input: 'type', key: 'type', select: 'select', submit: 'submit', upload: 'upload' };
+
 function renderSteps() {
   const items = lists.steps.map((ev) =>
     row(ev, {
       glyph: ev.type === 'navigation' ? 'compass' : ACTION_ICON[ev.action] || 'cursor-click',
+      tone: ev.type === 'navigation' ? 'nav' : ACTION_TONE[ev.action] || 'click',
       body: [
         h('div', { class: 'text' }, ev.text || ev.action || ''),
         ev.type === 'navigation' && ev.url ? h('div', { class: 'sub' }, shortUrl(ev.url)) : null,
@@ -418,6 +422,7 @@ function renderConsole() {
     row(ev, {
       cls: ev.level === 'error' ? 'bad' : ev.level === 'warn' ? 'warn' : '',
       glyph: ev.level === 'error' || ev.level === 'warn' ? 'warning-circle' : 'terminal-window',
+      tone: ev.level === 'error' ? 'error' : ev.level === 'warn' ? 'warn' : 'log',
       body: [
         h('div', { class: 'code' }, ev.message || ''),
         ev.source ? h('div', { class: 'sub code' }, ev.source) : null,
@@ -442,11 +447,15 @@ function renderNetwork() {
       ev.responseBody ? `\nResponse\n${ev.responseBody}` : '',
     );
     const toggle = h('button', { class: 'more', type: 'button', onclick: (e) => { e.stopPropagation(); detail.hidden = !detail.hidden; toggle.textContent = detail.hidden ? 'Details' : 'Hide'; } }, 'Details');
+    const code = ev.status || 0;
+    const statusTone = !code ? 's0' : code >= 500 ? 's5' : code >= 400 ? 's4' : code >= 300 ? 's3' : 's2';
+    const method = (ev.method || 'GET').toUpperCase();
     return row(ev, {
       cls: bad ? 'bad' : '',
       glyph: bad ? 'warning-circle' : 'globe-simple',
+      tone: bad ? 'error' : 'net',
       body: [
-        h('div', { class: 'text' }, h('span', { class: `status${bad ? ' bad' : ''}` }, ev.status || 'ERR'), h('span', { class: 'method' }, ev.method || 'GET'), pathOf(ev.url)),
+        h('div', { class: 'text' }, h('span', { class: `status ${statusTone}` }, code || 'ERR'), h('span', { class: `method m-${method.toLowerCase()}` }, method), pathOf(ev.url)),
         h('div', { class: 'sub' }, [hostOf(ev.url), ev.durationMs !== undefined ? `${ev.durationMs} ms` : null].filter(Boolean).join('  ·  ')),
         toggle,
         detail,
@@ -849,9 +858,49 @@ function flash(btn, iconName, text) {
   }, 1400);
 }
 
-async function copyShareLink(btn, url = shareLink()) {
-  await navigator.clipboard.writeText(url);
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = h('textarea', { style: 'position:fixed;opacity:0;pointer-events:none' });
+    ta.value = text;
+    document.body.append(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
+    ta.remove();
+    return ok;
+  }
+}
+
+/**
+ * Make sure there is a public link before copying. A recording made before Google Drive was
+ * connected gets its link reserved here, and its upload starts.
+ */
+async function ensurePublicLink() {
+  if (driveMode || rec?.shareUrl || !rec?.driveConnected) return;
+  const res = await fetch(`/api/recordings/${encodeURIComponent(id)}/share`, { method: 'POST' }).catch(() => null);
+  const body = res ? await res.json().catch(() => ({})) : {};
+  if (body.shareUrl) {
+    rec = { ...rec, shareUrl: body.shareUrl, drive: { ...(rec.drive || {}), shareUrl: body.shareUrl, status: body.status || 'pending' } };
+    renderBanner();
+    renderDetails();
+    if (needsPoll()) poll();
+  }
+}
+
+async function copyShareLink(btn, atSeconds = null) {
+  await ensurePublicLink();
+  const base = shareLink();
+  const url = atSeconds === null ? base : withTime(base, atSeconds);
+  if (!(await copyText(url))) return flash(btn, 'warning-circle', "Couldn't copy");
   flash(btn, 'check', isPublicLink() ? 'Copied' : 'Copied (only you)');
+  if ($('rLink')) $('rLink').value = base;
 }
 
 $('copyLink').addEventListener('click', () => copyShareLink($('copyLink')));
@@ -875,16 +924,15 @@ document.addEventListener('click', (e) => !menu.contains(e.target) && closeMenu(
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closeMenu());
 $('copyAtTime').addEventListener('click', async () => {
   closeMenu();
-  await copyShareLink($('copyLink'), withTime(shareLink(), video.currentTime));
+  await copyShareLink($('copyLink'), video.currentTime);
 });
 $('copyReportMenu').addEventListener('click', async () => {
   closeMenu();
-  await navigator.clipboard.writeText($('report').value);
-  flash($('copyLink'), 'check', 'Report copied');
+  flash($('copyLink'), (await copyText($('report').value)) ? 'check' : 'warning-circle', 'Report copied');
 });
 $('copyReport').addEventListener('click', async () => {
-  await navigator.clipboard.writeText($('report').value);
-  flash($('copyReport'), 'check', 'Copied');
+  const ok = await copyText($('report').value);
+  flash($('copyReport'), ok ? 'check' : 'warning-circle', ok ? 'Copied' : "Couldn't copy");
 });
 
 // ---------------------------------------------------------------- review (local server only)
@@ -911,6 +959,11 @@ function openReview() {
   }
   $('review').hidden = false;
   setTimeout(() => $('rTitle').focus(), 30);
+  // The review screen is for sharing: make sure a public link exists.
+  ensurePublicLink().then(() => {
+    $('rLink').value = shareLink();
+    $('rStatus').textContent = reviewStatus();
+  });
   // Keep the link and status fresh while the modal is open (the link is reserved in the background).
   clearInterval(openReview.timer);
   openReview.timer = setInterval(async () => {
@@ -949,7 +1002,7 @@ if (!driveMode) {
   $('reviewClose').addEventListener('click', closeReview);
   $('review').addEventListener('click', (e) => e.target === $('review') && closeReview());
   document.addEventListener('keydown', (e) => e.key === 'Escape' && !$('review').hidden && closeReview());
-  $('rCopy').addEventListener('click', () => copyShareLink($('rCopy'), $('rLink').value));
+  $('rCopy').addEventListener('click', () => copyShareLink($('rCopy')));
   $('reviewForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('rSave').disabled = true;
