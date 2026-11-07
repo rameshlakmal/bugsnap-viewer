@@ -767,6 +767,53 @@ function applyFilter() {
 }
 $('search').addEventListener('input', applyFilter);
 
+// DevTools panel: drag its left edge (or use arrow keys on it) to resize; the width is remembered.
+(() => {
+  const layout = $('layout');
+  const handle = $('resizer');
+  const clamp = (w) => Math.round(Math.max(320, Math.min(w, Math.min(900, window.innerWidth * 0.7))));
+  const apply = (w) => layout.style.setProperty('--side-w', `${clamp(w)}px`);
+  const save = () => {
+    try {
+      localStorage.setItem('bugsnap.sideWidth', String($('side').getBoundingClientRect().width));
+    } catch {
+      /* storage unavailable: width just isn't remembered */
+    }
+  };
+  try {
+    const w = Number(localStorage.getItem('bugsnap.sideWidth'));
+    if (w) apply(w);
+  } catch {
+    /* ignore */
+  }
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add('resizing');
+    const move = (ev) => apply(window.innerWidth - ev.clientX);
+    const up = () => {
+      document.body.classList.remove('resizing');
+      handle.removeEventListener('pointermove', move);
+      save();
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up, { once: true });
+    handle.addEventListener('pointercancel', up, { once: true });
+  });
+  handle.addEventListener('dblclick', () => {
+    layout.style.removeProperty('--side-w');
+    save();
+  });
+  handle.addEventListener('keydown', (e) => {
+    const w = $('side').getBoundingClientRect().width;
+    if (e.key === 'ArrowLeft') apply(w + 24);
+    else if (e.key === 'ArrowRight') apply(w - 24);
+    else return;
+    e.preventDefault();
+    save();
+  });
+})();
+
 $('togglePanel').addEventListener('click', () => {
   const off = $('layout').classList.toggle('no-side');
   $('togglePanel').classList.toggle('off', off);
@@ -800,11 +847,19 @@ async function copyShareLink(btn, url = shareLink()) {
 $('copyLink').addEventListener('click', () => copyShareLink($('copyLink')));
 
 const menu = $('shareMenu');
-const closeMenu = () => (menu.hidden = true);
+function closeMenu() {
+  if (menu.hidden || menu.classList.contains('closing')) return;
+  menu.classList.add('closing');
+  setTimeout(() => {
+    menu.hidden = true;
+    menu.classList.remove('closing');
+  }, 120);
+}
 $('shareMore').addEventListener('click', (e) => {
   e.stopPropagation();
-  menu.hidden = !menu.hidden;
-  if (!menu.hidden) menu.querySelector('button, a:not([hidden])')?.focus();
+  if (!menu.hidden) return closeMenu();
+  menu.hidden = false;
+  menu.querySelector('button, a:not([hidden])')?.focus();
 });
 document.addEventListener('click', (e) => !menu.contains(e.target) && closeMenu());
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closeMenu());
@@ -860,7 +915,13 @@ function openReview() {
 }
 
 function closeReview() {
-  $('review').hidden = true;
+  const back = $('review');
+  if (back.hidden || back.classList.contains('closing')) return;
+  back.classList.add('closing');
+  setTimeout(() => {
+    back.hidden = true;
+    back.classList.remove('closing');
+  }, 180);
   $('reviewVideo').pause();
   clearInterval(openReview.timer);
   if (params.has('review')) {

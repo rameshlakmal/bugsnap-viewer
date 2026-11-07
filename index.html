@@ -7,6 +7,10 @@
     <title>Recording · BugSnap</title>
     <link rel="preload" href="fonts/figtree.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="icon" href="logo.svg" type="image/svg+xml" />
+    <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <link rel="manifest" href="site.webmanifest" />
+    <meta name="theme-color" content="#18181b" />
     <link rel="preconnect" href="https://www.googleapis.com" crossorigin />
     <link rel="preconnect" href="https://www.googleapis.com" />
     <script src="config.js"></script>
@@ -87,6 +91,7 @@
       </section>
 
       <aside class="side" id="side">
+        <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize DevTools" tabindex="0" data-tip="Drag to resize · double-click to reset"></div>
         <div class="side-head"><strong>DevTools</strong></div>
         <nav class="tabs" role="tablist">
           <button role="tab" data-tab="info" aria-selected="false">Info</button>
