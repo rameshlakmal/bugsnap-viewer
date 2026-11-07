@@ -348,7 +348,7 @@ function useDriveFallback(message) {
     $('title').textContent = 'Recording';
     $('desc').hidden = true;
     $('side').hidden = true;
-    $('layout').classList.add('no-side');
+    $('layout').classList.add('no-side', 'side-gone');
   }
 }
 
@@ -815,7 +815,17 @@ $('search').addEventListener('input', applyFilter);
 })();
 
 $('togglePanel').addEventListener('click', () => {
-  const off = $('layout').classList.toggle('no-side');
+  const layout = $('layout');
+  const off = !layout.classList.contains('no-side');
+  clearTimeout(layout._hideTimer);
+  if (off) {
+    layout.classList.add('no-side');
+    // After the slide, take it out of keyboard focus order too.
+    layout._hideTimer = setTimeout(() => layout.classList.add('side-gone'), 330);
+  } else {
+    layout.classList.remove('side-gone');
+    requestAnimationFrame(() => layout.classList.remove('no-side'));
+  }
   $('togglePanel').classList.toggle('off', off);
   $('togglePanel').dataset.tip = off ? 'Show DevTools' : 'Hide DevTools';
 });

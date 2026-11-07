@@ -32,9 +32,15 @@ body.public .crumb-title { display: none; }
 .banner .btn { margin-left: auto; }
 
 /* ------------------------------------------------------------ layout */
-.layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--side-w, 440px); }
-.layout.no-side { grid-template-columns: minmax(0, 1fr); }
-.layout.no-side .side { display: none; }
+/* The DevTools column slides open and shut (grid columns animate); its contents keep their
+   width while it moves so text never re-wraps mid-animation. */
+.layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--side-w, 440px); transition: grid-template-columns .32s var(--ease); }
+.layout.no-side { grid-template-columns: minmax(0, 1fr) 0px; }
+.side > * { width: var(--side-w, 440px); flex-shrink: 0; transition: opacity .2s ease, transform .32s var(--ease); }
+.layout.no-side .side { border-left-color: transparent; }
+.layout.no-side .side > * { opacity: 0; transform: translateX(24px); }
+.layout.side-gone .side { visibility: hidden; }
+body.resizing .layout, body.resizing .side > * { transition: none; }
 .main-col { min-width: 0; overflow: auto; padding: 20px 28px 40px; background: var(--bg); }
 .main-col > * { max-width: 1120px; margin-left: auto; margin-right: auto; }
 
@@ -95,7 +101,8 @@ body.public .crumb-title { display: none; }
 .activity strong { color: var(--text); font-weight: 600; }
 
 /* ------------------------------------------------------------ DevTools side panel */
-.side { position: relative; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border); background: var(--surface); animation: fade-in .2s ease-out; }
+.side { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border); background: var(--surface); transition: border-color .32s ease; }
+.side > .resizer { width: 8px; }
 .resizer { position: absolute; left: 0; top: 0; bottom: 0; width: 8px; z-index: 5; cursor: col-resize; touch-action: none; }
 .resizer::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: transparent; transition: background .15s ease; }
 .resizer:hover::after, .resizer:focus-visible::after, body.resizing .resizer::after { background: var(--text); }
@@ -194,7 +201,6 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: var(--rin
 .modal { width: min(1180px, 100%); height: min(680px, 100%); display: grid; grid-template-columns: minmax(0, 1fr) 380px; border-radius: 20px; overflow: hidden; background: var(--surface); box-shadow: 0 30px 80px rgb(0 0 0 / 0.3); animation: rise-in .26s var(--ease); }
 .modal-back.closing { animation: fade-out .18s ease-in forwards; }
 .modal-back.closing .modal { animation: sink-out .18s ease-in forwards; }
-.layout.no-side { animation: none; }
 .stage, .details { animation: fade-in .25s ease-out; }
 .modal-video { background: #0d0d0f; display: grid; place-items: center; min-height: 0; padding: 16px; }
 .modal-video video { width: 100%; max-height: 100%; border-radius: 10px; background: #000; }
@@ -224,6 +230,8 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: var(--rin
   .layout { grid-template-columns: minmax(0, 1fr); }
   .side { border-left: 0; border-top: 1px solid var(--border); min-height: 560px; }
   .resizer { display: none; }
+  .side > * { width: auto; }
+  .layout { transition: none; }
   .main-col { overflow: visible; padding: 16px; }
   .layout { overflow: auto; }
   #togglePanel { display: none; }
