@@ -204,7 +204,17 @@ details > summary { cursor: pointer; font-size: 12.5px; color: var(--muted); mar
 .kv dd a { text-decoration: underline; text-underline-offset: 3px; }
 .ua { font: 11.5px/1.5 var(--mono); color: var(--muted); }
 
-.report { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.report { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.ask { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border); }
+.ask label { font-size: 13px; font-weight: 700; }
+.ask textarea { min-height: 72px; flex: none; font: 400 14px/1.5 var(--font); resize: vertical; background: var(--surface); }
+.ask-row { display: flex; align-items: center; gap: 8px; }
+.ai-hint { margin: 0; font-size: 12.5px; color: var(--muted); }
+.ai-hint.bad { color: var(--live); }
+.report-head { display: flex; align-items: center; gap: 6px; }
+.report-head strong { font-size: 13px; color: var(--muted); font-weight: 600; }
+#writeAi.busy .icon { animation: spin 1.2s linear infinite; }
+#report[readonly] { background: var(--surface); }
 .report:not([hidden]) { display: flex; }
 .hint { margin: 0; font-size: 13px; color: var(--muted); }
 textarea {

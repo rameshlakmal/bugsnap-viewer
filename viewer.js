@@ -256,8 +256,113 @@ function render() {
   renderNetwork();
   renderInfo();
   renderMarkers();
-  $('report').value = buildReport();
+  renderReport();
   sync();
+}
+
+// ---------------------------------------------------------------- report tab
+
+let reportDirty = false;
+
+function renderReport() {
+  const saved = rec.report?.markdown;
+  if (!reportDirty) $('report').value = saved || buildReport();
+  $('reportLabel').textContent = saved
+    ? `${rec.report.model ? 'Written by Claude' : 'Saved report'}${rec.report.editedAt ? ' · edited' : ''}`
+    : 'Draft from the recording';
+  if (driveMode) {
+    $('report').readOnly = true;
+    return;
+  }
+  if (!$('what').value) $('what').value = rec.meta?.description || '';
+  if (!$('writeAi').classList.contains('busy')) $('writeAi').querySelector('span:last-child').textContent = saved && rec.report.model ? 'Rewrite with Claude' : 'Write with Claude';
+  const kind = rec.report?.kind || 'bug';
+  document.querySelectorAll('[data-kind]').forEach((b) => b.classList.toggle('on', b.dataset.kind === kind));
+}
+
+let aiChecked = false;
+async function checkAi() {
+  if (driveMode || aiChecked) return;
+  aiChecked = true;
+  const s = await fetch('/api/ai').then((r) => r.json()).catch(() => null);
+  if (s && !s.available) {
+    $('writeAi').disabled = true;
+    $('aiHint').hidden = false;
+    $('aiHint').className = 'ai-hint bad';
+    $('aiHint').textContent = 'Claude Code was not found on this computer. Install it and run "claude" once to sign in, then restart the server.';
+  }
+}
+
+if (!driveMode) {
+  document.querySelectorAll('[data-kind]').forEach((b) =>
+    b.addEventListener('click', () => document.querySelectorAll('[data-kind]').forEach((x) => x.classList.toggle('on', x === b))),
+  );
+  $('writeAi').addEventListener('click', async () => {
+    const btn = $('writeAi');
+    const hint = $('aiHint');
+    if (reportDirty && !confirmOverwrite()) return;
+    btn.disabled = true;
+    btn.classList.add('busy');
+    btn.querySelector('span:last-child').textContent = 'Writing…';
+    hint.hidden = false;
+    hint.className = 'ai-hint';
+    hint.textContent = 'Claude is reading the recording. This takes about 10 seconds.';
+    const kind = document.querySelector('[data-kind].on')?.dataset.kind || 'bug';
+    try {
+      const res = await fetch(`/api/recordings/${encodeURIComponent(id)}/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: $('what').value, kind }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Server answered ${res.status}`);
+      rec.report = body;
+      rec.meta = { ...rec.meta, description: $('what').value };
+      reportDirty = false;
+      $('saveReport').hidden = true;
+      renderReport();
+      renderDetails();
+      hint.hidden = true;
+    } catch (err) {
+      hint.className = 'ai-hint bad';
+      hint.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove('busy');
+      btn.querySelector('span:last-child').textContent = rec.report?.markdown ? 'Rewrite with Claude' : 'Write with Claude';
+    }
+  });
+  $('report').addEventListener('input', () => {
+    reportDirty = true;
+    $('saveReport').hidden = false;
+  });
+  $('saveReport').addEventListener('click', async () => {
+    const res = await fetch(`/api/recordings/${encodeURIComponent(id)}/report`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markdown: $('report').value }),
+    }).catch(() => null);
+    if (!res || !res.ok) return flash($('saveReport'), 'warning-circle', "Couldn't save");
+    rec.report = await res.json();
+    reportDirty = false;
+    flash($('saveReport'), 'check', 'Saved');
+    setTimeout(() => ($('saveReport').hidden = true), 1400);
+    renderReport();
+  });
+}
+
+function confirmOverwrite() {
+  const hint = $('aiHint');
+  if (confirmOverwrite.armed) {
+    confirmOverwrite.armed = false;
+    return true;
+  }
+  confirmOverwrite.armed = true;
+  hint.hidden = false;
+  hint.className = 'ai-hint bad';
+  hint.textContent = 'You have unsaved edits. Click "Write with Claude" again to replace them.';
+  setTimeout(() => (confirmOverwrite.armed = false), 5000);
+  return false;
 }
 
 function renderDetails() {
@@ -557,39 +662,43 @@ function buildReport() {
   const failed = lists.network.filter(isNetError);
   const page = shortUrl(meta.startUrl) || meta.title || 'the page';
 
-  let title = meta.title || `Problem on ${page}`;
-  if (!meta.description && errors[0]) title = `${errors[0].message.split('\n')[0].slice(0, 90)} on ${page}`;
-  else if (!meta.description && failed[0]) title = `${failed[0].method} ${pathOf(failed[0].url).split('?')[0]} returns ${failed[0].status || 'a network error'}`;
+  // "<Page> - <problem>": page name from the tab title ("Pricing | Acme" -> "Pricing").
+  const pageName = (meta.title || page).split(/\s[|–—-]\s/)[0].trim() || 'Page';
+  let problem = 'describe the problem';
+  if (errors[0]) problem = errors[0].message.split('\n')[0].slice(0, 70);
+  else if (failed[0]) problem = `${failed[0].method} ${pathOf(failed[0].url).split('?')[0]} returns ${failed[0].status || 'a network error'}`;
+  const title = `${pageName} - ${problem}`;
+  const link = shareLink();
+  const at = (e) => `${link}${link.includes('?') ? '&' : '?'}t=${Math.floor(offsetOf(e))}`;
 
   const evidence = [
-    ...errors.slice(0, 5).map((e) => `- [${fmt(offsetOf(e))}] Console error: \`${e.message.split('\n')[0].slice(0, 200)}\``),
-    ...failed.slice(0, 5).map((e) => `- [${fmt(offsetOf(e))}] \`${e.method} ${shortUrl(e.url)}\` returned ${e.status || 'a network error'}${e.error ? ` (${e.error})` : ''}`),
+    ...errors.slice(0, 5).map((e) => `- Console error at ${fmt(offsetOf(e))}: \`${e.message.split('\n')[0].slice(0, 200)}\` (${at(e)})`),
+    ...failed.slice(0, 5).map((e) => `- \`${e.method} ${shortUrl(e.url)}\` returned ${e.status || 'a network error'} at ${fmt(offsetOf(e))} (${at(e)})`),
   ];
   const size = (o) => (o && o.width ? `${o.width}x${o.height}` : 'unknown');
 
   return [
-    `## ${title}`,
+    `# ${title}`,
     '',
-    '### Description',
+    '## Description',
     meta.description || '_Describe the problem in one or two sentences._',
     '',
-    '### Preconditions',
+    '## Preconditions',
     `- Start on: ${meta.startUrl || 'unknown'}`,
-    `- ${env.browser || 'Unknown browser'} on ${env.os || meta.platform?.os || 'unknown OS'}`,
-    `- Window ${size(meta.window)}, viewport ${size(meta.viewport)}`,
+    `- ${env.browser || 'Unknown browser'} on ${env.os || meta.platform?.os || 'unknown OS'}, window ${size(meta.window)}, viewport ${size(meta.viewport)}`,
     '',
-    '### Steps to reproduce',
-    ...(steps.length ? steps.map((e, i) => `${i + 1}. ${e.text} _(${fmt(offsetOf(e))})_`) : ['1. _No steps captured_']),
+    '## Steps to reproduce',
+    ...(steps.length ? steps.map((e, i) => `${i + 1}. ${e.text}`) : ['1. _No steps captured_']),
     '',
-    '### Actual result',
+    '## Attachments',
+    `- Recording: ${link}`,
+    ...evidence,
+    '',
+    '## Actual result',
     '_What happened._',
-    ...(evidence.length ? ['', 'Errors captured during the recording:', ...evidence] : []),
     '',
-    '### Expected result',
+    '## Expected result',
     '_What should have happened._',
-    '',
-    '### Recording',
-    shareLink(),
     '',
   ].join('\n');
 }
@@ -754,6 +863,7 @@ document.querySelectorAll('[data-tab]').forEach((b) =>
       x.setAttribute('aria-selected', String(x === b));
     });
     for (const name of ['info', 'steps', 'console', 'network', 'report']) $(`pane-${name}`).hidden = name !== activeTab;
+    if (activeTab === 'report') checkAi();
     $('toolbar').hidden = activeTab === 'info' || activeTab === 'report';
     $('levels').hidden = activeTab !== 'console';
     applyFilter();
@@ -1016,7 +1126,8 @@ if (!driveMode) {
     const saved = await res.json();
     rec.meta = { ...rec.meta, title: saved.title, description: saved.description };
     renderDetails();
-    $('report').value = buildReport();
+    if (!$('what').value) $('what').value = saved.description || '';
+    renderReport();
     closeReview();
   });
   let armed = false;

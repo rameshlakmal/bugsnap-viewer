@@ -114,9 +114,26 @@
         <div class="pane" id="pane-console" hidden><ol class="events" id="list-console"></ol></div>
         <div class="pane" id="pane-network" hidden><ol class="events" id="list-network"></ol></div>
         <div class="pane report" id="pane-report" hidden>
-          <p class="hint">Draft from this recording. Add what you expected, then copy.</p>
-          <textarea id="report" spellcheck="true" aria-label="Bug report draft"></textarea>
-          <div><button class="btn primary" id="copyReport"><span class="icon" data-icon="copy"></span><span>Copy</span></button></div>
+          <div class="ask" data-local-only>
+            <label for="what">What happened?</label>
+            <textarea id="what" rows="3" placeholder="e.g. I clicked Start trial and nothing happened. It should open the payment page."></textarea>
+            <div class="ask-row">
+              <div class="segmented sm" id="kind" role="group" aria-label="Report type">
+                <button type="button" data-kind="bug" class="on" data-tip="Something is broken">Bug</button>
+                <button type="button" data-kind="suggestion" data-tip="Something could be better">Suggestion</button>
+              </div>
+              <span class="spacer"></span>
+              <button class="btn primary sm" id="writeAi" data-tip="Claude writes the issue from your words and the recording"><span class="icon" data-icon="sparkle"></span><span>Write with Claude</span></button>
+            </div>
+            <p class="ai-hint" id="aiHint" hidden></p>
+          </div>
+          <div class="report-head">
+            <strong id="reportLabel">Draft</strong>
+            <span class="spacer"></span>
+            <button class="btn ghost sm" id="saveReport" data-local-only hidden><span class="icon" data-icon="floppy-disk"></span><span>Save</span></button>
+            <button class="btn sm" id="copyReport"><span class="icon" data-icon="copy"></span><span>Copy</span></button>
+          </div>
+          <textarea id="report" spellcheck="true" aria-label="Bug report"></textarea>
         </div>
       </aside>
     </main>
