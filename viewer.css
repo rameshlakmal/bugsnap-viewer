@@ -17,6 +17,8 @@ a { color: inherit; }
 .banner { display: flex; align-items: center; gap: 10px; margin: 12px 20px 0; padding: 10px 14px; border-radius: var(--r-field); background: var(--accent-soft); font-size: 13px; }
 .banner .icon { width: 16px; height: 16px; color: var(--accent); flex: none; }
 .banner.bad { background: var(--live-soft); }
+.banner.ok { background: rgb(26 143 80 / 0.1); }
+.banner.ok .icon { color: var(--ok); }
 .banner.bad .icon { color: var(--live); }
 .banner .btn { margin-left: auto; }
 .spin { animation: spin 0.9s linear infinite; }

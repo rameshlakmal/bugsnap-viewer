@@ -138,6 +138,25 @@ async function load() {
 }
 
 const uploading = (r) => ['pending', 'uploading'].includes(r?.drive?.status);
+let justShared = false;
+
+/** While the Drive upload runs there is no public link yet, so don't offer one. */
+function updateCopyButton() {
+  const btn = $('copyLink');
+  const busy = !driveMode && rec.driveConnected && (rec.status !== 'ready' || uploading(rec));
+  btn.disabled = busy;
+  btn.querySelector('[data-icon]').dataset.icon = busy ? 'spinner-gap' : 'link-simple';
+  btn.querySelector('[data-icon]').classList.toggle('spin', busy);
+  btn.querySelector('span:last-child').textContent = busy ? 'Uploading…' : 'Copy link';
+  btn.title = busy ? 'The public link is ready when the upload finishes' : '';
+  paintIcons(btn);
+}
+
+async function copyShareLink(btn) {
+  await navigator.clipboard.writeText(shareLink());
+  const isPublic = driveMode || Boolean(rec?.shareUrl);
+  flash(btn, 'check', isPublic ? 'Copied' : 'Copied (only you)');
+}
 const needsPoll = () => !driveMode && (rec.status !== 'ready' || uploading(rec));
 
 let pollTimer = null;
@@ -157,6 +176,7 @@ function poll() {
         if (playing) video.play().catch(() => {});
       }, { once: true });
     } else {
+      if (rec.drive?.status !== 'done' && r.drive?.status === 'done') justShared = true;
       rec = { ...rec, drive: r.drive, shareUrl: r.shareUrl, driveConnected: r.driveConnected };
       renderBanner();
     }
@@ -171,7 +191,7 @@ function renderBanner() {
   const set = (text, { spin = false, button = null, tone = '' } = {}) => {
     banner.hidden = false;
     banner.className = `banner ${tone}`;
-    $('bannerIcon').dataset.icon = spin ? 'spinner-gap' : tone === 'bad' ? 'warning-circle' : 'info';
+    $('bannerIcon').dataset.icon = spin ? 'spinner-gap' : tone === 'bad' ? 'warning-circle' : tone === 'ok' ? 'check' : 'info';
     $('bannerIcon').classList.toggle('spin', spin);
     paintIcons(banner);
     $('bannerText').textContent = text;
@@ -181,11 +201,15 @@ function renderBanner() {
       action.onclick = button.onClick;
     }
   };
+  if (!driveMode) updateCopyButton();
   if (driveMode) return (banner.hidden = true);
   if (rec.status === 'recording') return set('Still recording. This page updates when it is saved.', { spin: true });
   if (rec.status !== 'ready') return set('Preparing video…', { spin: true });
   const d = rec.drive;
-  if (d?.status === 'done') return (banner.hidden = true);
+  if (d?.status === 'done') {
+    if (!justShared) return (banner.hidden = true);
+    return set('Ready to share. Anyone with the link can watch.', { tone: 'ok', button: { label: 'Copy link', onClick: () => copyShareLink(action) } });
+  }
   if (uploading(rec)) return set('Uploading to Google Drive…', { spin: true });
   const upload = async () => {
     action.disabled = true;
@@ -587,6 +611,11 @@ $('search').addEventListener('input', applyFilter);
 
 function flash(btn, iconName, text) {
   const ic = btn.querySelector('[data-icon]');
+  if (!ic) {
+    const old = btn.textContent;
+    btn.textContent = text;
+    return setTimeout(() => (btn.textContent = old), 1400);
+  }
   const label = btn.querySelector('span:last-child');
   const old = { icon: ic.dataset.icon, text: label.textContent };
   ic.dataset.icon = iconName;
@@ -599,12 +628,7 @@ function flash(btn, iconName, text) {
   }, 1400);
 }
 
-$('copyLink').addEventListener('click', async () => {
-  const link = shareLink();
-  await navigator.clipboard.writeText(link);
-  const isPublic = driveMode || Boolean(rec?.shareUrl);
-  flash($('copyLink'), 'check', isPublic ? 'Copied' : 'Copied (only you)');
-});
+$('copyLink').addEventListener('click', () => copyShareLink($('copyLink')));
 
 $('copyReport').addEventListener('click', async () => {
   await navigator.clipboard.writeText($('report').value);
