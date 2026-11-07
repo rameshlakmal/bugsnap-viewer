@@ -401,6 +401,9 @@ function renderDetails() {
   const items = [
     h('div', { class: 'item' }, h('span', { class: 'avatar' }, who.trim().charAt(0) || '?'), h('span', {}, h('strong', {}, who), isShot() ? ' captured this screenshot' : ` recorded this${durationSec ? ` (${fmt(durationSec)})` : ''}`, when ? ` · ${relative(new Date(when).toISOString())}` : '')),
   ];
+  for (const issue of rec.github || []) {
+    items.push(h('div', { class: 'item' }, h('span', { class: 'avatar drive' }, icon('github-logo')), h('span', {}, 'GitHub issue ', h('a', { href: issue.url, target: '_blank', rel: 'noopener noreferrer' }, `#${issue.number}`), ` in ${issue.repo}`)));
+  }
   const d = rec.drive;
   if (!driveMode && d) {
     const text = d.status === 'done' ? 'Shared on Google Drive · anyone with the link can watch' : uploading(rec) ? 'Uploading to Google Drive…' : d.status === 'error' ? 'Google Drive upload failed' : '';
@@ -635,6 +638,7 @@ function renderInfo() {
     [isShot() ? 'Captured' : 'Recorded', when.toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })],
     ['Duration', durationSec ? fmt(durationSec) : undefined],
     [isShot() ? 'Captured by' : 'Recorded by', meta.reporter],
+    ['GitHub issue', rec.github?.length ? [icon('github-logo'), ...rec.github.map((g, i) => [i ? ', ' : '', link(g.url, `#${g.number}`)]).flat()] : undefined],
     ['Type', isShot() ? `Screenshot${rec.image?.width ? ` (${rec.image.width} × ${rec.image.height})` : ''}` : meta.mode === 'desktop' ? `Screen (${{ monitor: 'entire screen', window: 'window', browser: 'browser tab' }[env.displaySurface] || 'screen'})` : 'Browser tab'],
     ['Location', loc && loc.latitude !== undefined
       ? [icon('map-pin'), link(`https://www.openstreetmap.org/?mlat=${loc.latitude}&mlon=${loc.longitude}#map=14/${loc.latitude}/${loc.longitude}`, `${loc.latitude.toFixed(3)}, ${loc.longitude.toFixed(3)}`)]
@@ -1192,10 +1196,173 @@ if (!driveMode) {
   });
 }
 
+// ---------------------------------------------------------------- GitHub issue (local server only)
+
+const ghState = { meta: null, labels: new Set(), assignees: new Set() };
+
+function ghError(message) {
+  $('ghAlert').hidden = !message;
+  $('ghAlertText').textContent = message || '';
+}
+
+async function ghJson(url, opts) {
+  const res = await fetch(url, opts);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `Server answered ${res.status}`);
+  return body;
+}
+
+function chipsFor(container, items, selected, render) {
+  if (!items.length) return container.replaceChildren(h('span', { class: 'muted-sm' }, 'None in this repository'));
+  container.replaceChildren(
+    ...items.map((item) => {
+      const key = render.key(item);
+      const b = h('button', { type: 'button', class: `chip-btn${selected.has(key) ? ' on' : ''}`, title: render.title?.(item) }, ...render.content(item));
+      b.addEventListener('click', () => {
+        selected.has(key) ? selected.delete(key) : selected.add(key);
+        b.classList.toggle('on', selected.has(key));
+      });
+      return b;
+    }),
+  );
+}
+
+async function loadRepoMeta(repo) {
+  ghState.labels.clear();
+  ghState.assignees.clear();
+  $('ghLabels').replaceChildren(h('span', { class: 'muted-sm' }, 'Loading…'));
+  $('ghAssignees').replaceChildren(h('span', { class: 'muted-sm' }, 'Loading…'));
+  $('ghMilestoneField').hidden = true;
+  if (!repo) return;
+  try {
+    const meta = await ghJson(`/api/github/meta?repo=${encodeURIComponent(repo)}`);
+    ghState.meta = meta;
+    // Pre-select the label that matches the report type.
+    const kind = rec.report?.kind || rec.meta?.kind || 'bug';
+    const wanted = kind === 'suggestion' ? /enhancement|suggestion|feature/i : /^bug$/i;
+    const match = meta.labels.find((l) => wanted.test(l.name));
+    if (match) ghState.labels.add(match.name);
+    chipsFor($('ghLabels'), meta.labels, ghState.labels, {
+      key: (l) => l.name,
+      title: (l) => l.description || l.name,
+      content: (l) => [h('span', { class: 'dot', style: `--c: #${l.color}` }), l.name],
+    });
+    chipsFor($('ghAssignees'), meta.assignees, ghState.assignees, {
+      key: (a) => a.login,
+      content: (a) => [h('img', { src: a.avatar, alt: '' }), a.login],
+    });
+    $('ghMilestoneField').hidden = !meta.milestones.length;
+    $('ghMilestone').replaceChildren(h('option', { value: '' }, 'No milestone'), ...meta.milestones.map((m) => h('option', { value: String(m.number) }, m.title)));
+  } catch (err) {
+    ghError(err.message);
+  }
+}
+
+async function openGitHub() {
+  if (driveMode || !rec) return;
+  closeMenu();
+  const back = $('gh');
+  back.hidden = false;
+  ghError('');
+  $('ghDone').hidden = true;
+  $('ghFoot').hidden = false;
+  $('ghCreate').disabled = false;
+  const status = await ghJson('/api/github').catch(() => ({ configured: false }));
+  $('ghSetup').hidden = status.configured;
+  $('ghFields').hidden = !status.configured;
+  $('ghCreate').hidden = !status.configured;
+  if (!status.configured) return;
+  try {
+    // Unsaved edits in the Report tab go into the issue too.
+    const draft = await ghJson(`/api/recordings/${encodeURIComponent(id)}/github/draft`);
+    const fromTab = reportDirty ? $('report').value : null;
+    if (fromTab) {
+      const m = /^#\s+(.+)\n?/.exec(fromTab.trim());
+      $('ghTitle').value = m ? m[1].trim() : draft.title;
+      $('ghBody').value = m ? fromTab.trim().slice(m[0].length).trim() : fromTab;
+    } else {
+      $('ghTitle').value = draft.title;
+      $('ghBody').value = draft.body;
+    }
+    $('ghTip').hidden = draft.hasReport || Boolean(fromTab);
+    const repos = await ghJson('/api/github/repos');
+    if (!repos.length) {
+      ghError('The token cannot see any repository with issues. Give it access in GitHub settings.');
+      $('ghCreate').disabled = true;
+      return;
+    }
+    const selected = repos.some((r) => r.fullName === draft.repo) ? draft.repo : repos[0].fullName;
+    $('ghRepo').replaceChildren(...repos.map((r) => h('option', { value: r.fullName, selected: r.fullName === selected ? '' : undefined }, `${r.fullName}${r.private ? ' (private)' : ''}`)));
+    $('ghRepo').value = selected;
+    loadRepoMeta(selected);
+    setTimeout(() => $('ghTitle').focus(), 30);
+  } catch (err) {
+    ghError(err.message);
+  }
+}
+
+function closeGitHub() {
+  const back = $('gh');
+  if (back.hidden || back.classList.contains('closing')) return;
+  back.classList.add('closing');
+  setTimeout(() => {
+    back.hidden = true;
+    back.classList.remove('closing');
+  }, 180);
+}
+
+if (!driveMode) {
+  $('ghOpen').addEventListener('click', openGitHub);
+  $('ghClose').addEventListener('click', closeGitHub);
+  $('ghCancel').addEventListener('click', closeGitHub);
+  $('gh').addEventListener('click', (e) => e.target === $('gh') && closeGitHub());
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && !$('gh').hidden && closeGitHub());
+  $('ghRepo').addEventListener('change', () => loadRepoMeta($('ghRepo').value));
+  $('ghToReport').addEventListener('click', () => {
+    closeGitHub();
+    document.querySelector('[data-tab="report"]').click();
+    $('what').focus();
+  });
+  $('ghForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    ghError('');
+    const btn = $('ghCreate');
+    btn.disabled = true;
+    btn.querySelector('span:last-child').textContent = 'Creating…';
+    try {
+      const issue = await ghJson(`/api/recordings/${encodeURIComponent(id)}/github`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo: $('ghRepo').value,
+          title: $('ghTitle').value,
+          body: $('ghBody').value,
+          labels: [...ghState.labels],
+          assignees: [...ghState.assignees],
+          milestone: $('ghMilestone').value || null,
+        }),
+      });
+      rec.github = [issue, ...(rec.github || [])];
+      renderDetails();
+      renderInfo();
+      $('ghFields').hidden = true;
+      $('ghFoot').hidden = true;
+      $('ghDone').hidden = false;
+      $('ghDoneText').textContent = `Issue #${issue.number} created in ${issue.repo}`;
+      $('ghDoneLink').href = issue.url;
+    } catch (err) {
+      ghError(err.message);
+      btn.disabled = false;
+    } finally {
+      btn.querySelector('span:last-child').textContent = 'Create issue';
+    }
+  });
+}
+
 // ---------------------------------------------------------------- keyboard
 
 document.addEventListener('keydown', (e) => {
-  if (!$('review').hidden) return;
+  if (!$('review').hidden || ($('gh') && !$('gh').hidden)) return;
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
   if (e.target instanceof HTMLButtonElement && (e.key === ' ' || e.key === 'Enter')) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;

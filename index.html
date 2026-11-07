@@ -34,6 +34,7 @@
       <span class="crumb-title" id="crumbTitle"></span>
       <span class="spacer"></span>
       <a class="btn ghost icon-only" id="download" data-tip="Download video"><span class="icon" data-icon="download-simple"></span></a>
+      <button class="btn" id="ghOpen" data-local-only data-tip="Create a GitHub issue from this report"><span class="icon" data-icon="github-logo"></span><span>Send to GitHub</span></button>
       <div class="split" id="shareSplit">
         <button class="btn primary" id="copyLink"><span class="icon" data-icon="link-simple"></span><span>Copy link</span></button>
         <div class="menu-wrap">
@@ -159,6 +160,42 @@
             <button type="button" class="btn ghost danger" id="rDelete"><span class="icon" data-icon="trash"></span><span>Delete</span></button>
             <span class="spacer"></span>
             <button type="submit" class="btn primary" id="rSave">Done</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- GitHub issue (local server only) -->
+    <div class="modal-back" id="gh" hidden data-local-only>
+      <div class="modal gh-modal" role="dialog" aria-modal="true" aria-labelledby="ghHead">
+        <form class="modal-side" id="ghForm">
+          <div class="modal-top">
+            <h2 id="ghHead"><span class="icon" data-icon="github-logo"></span>Create GitHub issue</h2>
+            <button type="button" class="btn ghost icon-only sm" id="ghClose" data-tip="Close" data-kbd="Esc"><span class="icon" data-icon="x"></span></button>
+          </div>
+          <div class="gh-setup" id="ghSetup" hidden>
+            <p>Connect GitHub once to create issues from BugSnap.</p>
+            <a class="btn primary" href="settings#github">Open Settings</a>
+          </div>
+          <div class="gh-fields" id="ghFields">
+            <p class="gh-tip" id="ghTip" hidden>Tip: <button type="button" class="linkish" id="ghToReport">write the report with Claude</button> first for a complete issue.</p>
+            <div class="field"><label for="ghRepo">Repository</label><select id="ghRepo"></select></div>
+            <div class="field"><label for="ghTitle">Title</label><input id="ghTitle" type="text" maxlength="256" autocomplete="off" /></div>
+            <div class="field grow"><label for="ghBody">Description</label><textarea id="ghBody" spellcheck="true"></textarea></div>
+            <div class="field"><label>Labels</label><div class="chips" id="ghLabels"><span class="muted-sm">Choose a repository</span></div></div>
+            <div class="field"><label>Assignees</label><div class="chips" id="ghAssignees"><span class="muted-sm">Choose a repository</span></div></div>
+            <div class="field" id="ghMilestoneField" hidden><label for="ghMilestone">Milestone</label><select id="ghMilestone"></select></div>
+          </div>
+          <div class="gh-done" id="ghDone" hidden>
+            <span class="icon" data-icon="check"></span>
+            <strong id="ghDoneText">Issue created</strong>
+            <a class="btn primary" id="ghDoneLink" target="_blank" rel="noopener"><span class="icon" data-icon="arrow-square-out"></span><span>Open on GitHub</span></a>
+          </div>
+          <div class="alert" id="ghAlert" role="alert" hidden><span class="icon" data-icon="warning-circle"></span><span id="ghAlertText"></span></div>
+          <div class="modal-foot" id="ghFoot">
+            <span class="spacer"></span>
+            <button type="button" class="btn ghost" id="ghCancel">Cancel</button>
+            <button type="submit" class="btn primary" id="ghCreate"><span class="icon" data-icon="github-logo"></span><span>Create issue</span></button>
           </div>
         </form>
       </div>

@@ -253,6 +253,31 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: var(--rin
 .btn.danger:hover { background: var(--live-soft); color: var(--live); }
 .btn.danger.armed { background: var(--live); color: #fff; }
 
+/* ------------------------------------------------------------ GitHub issue modal */
+.gh-modal { width: min(620px, 100%); height: min(760px, 100%); grid-template-columns: 1fr; }
+.gh-modal h2 { display: flex; align-items: center; gap: 8px; }
+.gh-modal h2 .icon { width: 20px; height: 20px; }
+.gh-fields { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+.gh-fields .field.grow { flex: 1; display: flex; flex-direction: column; min-height: 160px; }
+.gh-fields textarea { flex: 1; min-height: 160px; resize: none; font: 400 13px/1.55 var(--mono); }
+.modal-side select { font: 400 14px/1.4 var(--font); height: 40px; padding: 0 10px; border-radius: var(--r-field); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); width: 100%; }
+.modal-side select:focus { outline: none; border-color: var(--text); box-shadow: var(--ring); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 96px; overflow: auto; }
+.chip-btn { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r-pill); border: 1px solid var(--border); font: 500 12.5px/1 var(--font); color: var(--muted); background: var(--surface); transition: background .15s var(--ease), border-color .15s var(--ease); }
+.chip-btn:hover { border-color: var(--border-strong); color: var(--text); }
+.chip-btn.on { background: var(--text); border-color: var(--text); color: #fff; }
+.chip-btn:focus-visible { box-shadow: var(--ring); }
+.chip-btn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c, #999); }
+.chip-btn img { width: 18px; height: 18px; border-radius: 50%; }
+.muted-sm { font-size: 13px; color: var(--faint); }
+.gh-tip { margin: 0; padding: 10px 12px; border-radius: var(--r-field); background: var(--bg); border: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+.linkish { all: unset; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; color: var(--text); font-weight: 600; }
+.gh-setup, .gh-done { display: grid; justify-items: center; gap: 12px; text-align: center; padding: 40px 12px; flex: 1; align-content: center; }
+.gh-setup p { margin: 0; color: var(--muted); }
+.gh-done .icon { width: 40px; height: 40px; padding: 8px; border-radius: 50%; background: rgb(26 143 80 / 0.12); color: var(--ok); box-sizing: content-box; }
+.gh-done strong { font-size: 17px; }
+#ghOpen .icon { width: 18px; height: 18px; }
+
 /* ------------------------------------------------------------ misc */
 .notfound { flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; text-align: center; padding: 40px 16px; }
 .notfound .icon { width: 36px; height: 36px; color: var(--faint); }
@@ -275,6 +300,8 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: var(--rin
   .modal-video { max-height: 40vh; }
 }
 @media (max-width: 640px) {
+  #ghOpen span:last-child { display: none; }
+  #ghOpen { width: 38px; padding: 0; }
   .crumbs, .crumb-title { display: none; }
   #copyLink span:last-child { display: none; }
   .kv { grid-template-columns: 1fr; }
