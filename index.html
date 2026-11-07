@@ -57,6 +57,7 @@
         <div class="stage" id="stage">
           <div class="screen" id="screen">
             <video id="video" playsinline preload="metadata"></video>
+            <a class="shot" id="shotLink" target="_blank" rel="noopener" data-tip="Open full size" hidden><img id="shot" alt="Screenshot" /></a>
             <button class="bigplay" id="bigPlay" data-tip="Play" hidden><span class="icon" data-icon="play-fill"></span></button>
             <div class="state" id="stageState" hidden><span class="icon spin" data-icon="spinner-gap"></span><strong id="stageTitle"></strong><span id="stageText"></span></div>
           </div>
@@ -141,7 +142,7 @@
     <!-- Review: shown after recording (?review=1) and from "Edit" -->
     <div class="modal-back" id="review" hidden>
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="reviewHead">
-        <div class="modal-video"><video id="reviewVideo" playsinline controls preload="metadata"></video></div>
+        <div class="modal-video"><video id="reviewVideo" playsinline controls preload="metadata"></video><img id="reviewImage" alt="" hidden /></div>
         <form class="modal-side" id="reviewForm">
           <div class="modal-top">
             <h2 id="reviewHead">Review recording</h2>

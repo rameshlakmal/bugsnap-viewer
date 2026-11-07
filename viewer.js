@@ -24,6 +24,8 @@ const lists = { steps: [], console: [], network: [] };
 let activeTab = 'steps';
 let level = 'all';
 let fallbackActive = false;
+const isShot = () => rec?.type === 'screenshot';
+let shotSetup = false;
 
 if (driveMode) document.body.classList.add('public');
 
@@ -202,7 +204,8 @@ function render() {
   renderDetails();
 
   const stateEl = $('stageState');
-  $('controls').hidden = rec.status !== 'ready' || fallbackActive;
+  if (isShot()) setupShot();
+  $('controls').hidden = rec.status !== 'ready' || fallbackActive || isShot();
   if (rec.status !== 'ready') {
     // Recording, processing, or (public link) still uploading to Drive.
     stateEl.hidden = false;
@@ -210,6 +213,15 @@ function render() {
     $('stageText').textContent = driveMode ? 'This recording is still uploading. It opens here automatically.' : 'This page updates by itself.';
     video.removeAttribute('src');
     $('bigPlay').hidden = true;
+  } else if (isShot()) {
+    stateEl.hidden = true;
+    const src = driveMode ? driveMedia(rec.video?.id || videoParam) : `/api/recordings/${encodeURIComponent(id)}/image`;
+    if ($('shot').getAttribute('src') !== src) $('shot').src = src;
+    $('shotLink').href = src;
+    $('download').href = driveMode ? `https://drive.google.com/uc?export=download&id=${encodeURIComponent(rec.video?.id || videoParam)}` : src;
+    if (driveMode) $('download').removeAttribute('download');
+    else $('download').setAttribute('download', `screenshot-${id}.png`);
+    $('download').dataset.tip = 'Download image';
   } else {
     stateEl.hidden = true;
     if (driveMode) {
@@ -387,7 +399,7 @@ function renderDetails() {
   const who = meta.reporter || 'Someone';
   const when = rec.startedAt || rec.createdAt;
   const items = [
-    h('div', { class: 'item' }, h('span', { class: 'avatar' }, who.trim().charAt(0) || '?'), h('span', {}, h('strong', {}, who), ` recorded this${durationSec ? ` (${fmt(durationSec)})` : ''}`, when ? ` · ${relative(new Date(when).toISOString())}` : '')),
+    h('div', { class: 'item' }, h('span', { class: 'avatar' }, who.trim().charAt(0) || '?'), h('span', {}, h('strong', {}, who), isShot() ? ' captured this screenshot' : ` recorded this${durationSec ? ` (${fmt(durationSec)})` : ''}`, when ? ` · ${relative(new Date(when).toISOString())}` : '')),
   ];
   const d = rec.drive;
   if (!driveMode && d) {
@@ -481,8 +493,27 @@ video.addEventListener('loadeddata', () => {
   if (!fallbackActive && driveMode) $('banner').hidden = true;
 });
 video.addEventListener('error', () => {
+  if (isShot() || !rec) return;
   if (driveMode && rec?.status === 'ready') useDriveFallback('Google Drive would not stream this video to the player, so it plays in Drive’s own player. Steps still list what happened.');
 });
+
+/** Screenshots: image instead of video, and only the Info and Report tabs. */
+function setupShot() {
+  if (shotSetup) return;
+  shotSetup = true;
+  video.pause();
+  video.removeAttribute('src');
+  video.hidden = true;
+  $('bigPlay').hidden = true;
+  $('shotLink').hidden = false;
+  $('stage').classList.add('is-shot');
+  $('copyAtTime').hidden = true;
+  for (const t of ['steps', 'console', 'network']) document.querySelector(`[data-tab="${t}"]`).hidden = true;
+  if (!['info', 'report'].includes(location.hash.slice(1))) document.querySelector('[data-tab="info"]').click();
+  $('shot').addEventListener('error', () => {
+    if (driveMode && rec?.status === 'ready') useDriveFallback('Google Drive would not send the image to the player, so it opens in Drive’s own viewer.');
+  });
+}
 
 function setCount(name, n, bad = 0, noun = '') {
   $(`c-${name}`).textContent = String(n);
@@ -601,10 +632,10 @@ function renderInfo() {
   }
   const when = new Date(rec.startedAt || rec.createdAt);
   const rows = [
-    ['Recorded', when.toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })],
+    [isShot() ? 'Captured' : 'Recorded', when.toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })],
     ['Duration', durationSec ? fmt(durationSec) : undefined],
-    ['Recorded by', meta.reporter],
-    ['Type', meta.mode === 'desktop' ? `Screen (${{ monitor: 'entire screen', window: 'window', browser: 'browser tab' }[env.displaySurface] || 'screen'})` : 'Browser tab'],
+    [isShot() ? 'Captured by' : 'Recorded by', meta.reporter],
+    ['Type', isShot() ? `Screenshot${rec.image?.width ? ` (${rec.image.width} × ${rec.image.height})` : ''}` : meta.mode === 'desktop' ? `Screen (${{ monitor: 'entire screen', window: 'window', browser: 'browser tab' }[env.displaySurface] || 'screen'})` : 'Browser tab'],
     ['Location', loc && loc.latitude !== undefined
       ? [icon('map-pin'), link(`https://www.openstreetmap.org/?mlat=${loc.latitude}&mlon=${loc.longitude}#map=14/${loc.latitude}/${loc.longitude}`, `${loc.latitude.toFixed(3)}, ${loc.longitude.toFixed(3)}`)]
       : loc?.error ? 'Not available' : undefined],
@@ -617,7 +648,7 @@ function renderInfo() {
     ['Language', env.language],
     ['Connection', env.connection?.effectiveType],
     ['CPU / memory', env.hardwareConcurrency ? `${env.hardwareConcurrency} cores${env.deviceMemoryGb ? ` · ${env.deviceMemoryGb} GB+` : ''}` : undefined],
-    ['Start page', meta.startUrl ? link(meta.startUrl, shortUrl(meta.startUrl)) : undefined],
+    [isShot() ? 'Page' : 'Start page', meta.startUrl ? link(meta.startUrl, shortUrl(meta.startUrl)) : undefined],
     ['Extension', meta.extensionVersion],
   ].filter(([, v]) => v !== undefined && v !== null && v !== '');
   blocks.push(h('dl', { class: 'kv' }, ...rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])));
@@ -691,10 +722,10 @@ function buildReport() {
     `- ${env.browser || 'Unknown browser'} on ${env.os || meta.platform?.os || 'unknown OS'}, window ${size(meta.window)}, viewport ${size(meta.viewport)}`,
     '',
     '## Steps to reproduce',
-    ...(steps.length ? steps.map((e, i) => `${i + 1}. ${e.text}`) : ['1. _No steps captured_']),
+    ...(steps.length ? steps.map((e, i) => `${i + 1}. ${e.text}`) : isShot() ? [`1. Go to ${meta.startUrl || 'the page'}`, '2. _Describe what to do to see the problem._'] : ['1. _No steps captured_']),
     '',
     '## Attachments',
-    `- Recording: ${link}`,
+    `- ${isShot() ? 'Screenshot' : 'Recording'}: ${link}`,
     ...evidence,
     '',
     '## Actual result',
@@ -1066,7 +1097,11 @@ function openReview() {
   $('rLink').value = shareLink();
   $('rStatus').textContent = reviewStatus();
   const rv = $('reviewVideo');
-  if (rec.status === 'ready' && !rv.src) {
+  if (isShot()) {
+    rv.hidden = true;
+    $('reviewImage').hidden = false;
+    $('reviewImage').src = $('shot').src;
+  } else if (rec.status === 'ready' && !rv.src) {
     rv.src = video.currentSrc || video.src;
     rv.poster = video.poster;
   }
@@ -1086,7 +1121,7 @@ function openReview() {
     rec = { ...rec, drive: r.drive, shareUrl: r.shareUrl, driveConnected: r.driveConnected, status: r.status };
     $('rLink').value = shareLink();
     $('rStatus').textContent = reviewStatus();
-    if (r.status === 'ready' && !rv.src) rv.src = `/api/recordings/${encodeURIComponent(id)}/video`;
+    if (r.status === 'ready' && !rv.src && !isShot()) rv.src = `/api/recordings/${encodeURIComponent(id)}/video`;
   }, 2000);
 }
 
