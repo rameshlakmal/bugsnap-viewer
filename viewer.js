@@ -289,7 +289,10 @@ async function checkAi() {
     $('writeAi').disabled = true;
     $('aiHint').hidden = false;
     $('aiHint').className = 'ai-hint bad';
-    $('aiHint').textContent = 'Claude Code was not found on this computer. Install it and run "claude" once to sign in, then restart the server.';
+    $('aiHint').replaceChildren(
+      document.createTextNode(s.provider === 'api' ? 'No Claude API key saved. ' : 'Claude Code was not found on this computer. '),
+      h('a', { href: '/settings' }, s.provider === 'api' ? 'Add one in Settings' : 'Choose Claude Code or an API key in Settings'),
+    );
   }
 }
 
