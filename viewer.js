@@ -1448,6 +1448,14 @@ function restoreBoards(repo) {
   } catch {
     saved = null;
   }
+  if (!saved) {
+    // First time with this repo: show boards made for bug details right away (linked to the
+    // repo and with their own dropdowns besides Status, e.g. Severity, Priority, Feature).
+    for (const p of ghState.projects) {
+      if (p.linked && p.fields.some((f) => f.name.trim().toLowerCase() !== 'status')) ghState.boards.add(p.id);
+    }
+    return;
+  }
   for (const pid of saved?.boards || []) {
     const p = ghState.projects.find((x) => x.id === pid);
     if (!p) continue;
@@ -1502,7 +1510,30 @@ function renderBoards() {
       return h(
         'div',
         { class: 'gh-board' },
-        h('div', { class: 'gh-board-head' }, icon('squares-four'), h('span', { class: 'txt' }, p.title), p.linked ? null : h('span', { class: 'pv-more' }, 'Not linked to this repo')),
+        h(
+          'div',
+          { class: 'gh-board-head' },
+          icon('squares-four'),
+          h('span', { class: 'txt' }, p.title),
+          p.linked ? null : h('span', { class: 'pv-more' }, 'Not linked to this repo'),
+          h('span', { class: 'spacer' }),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'btn ghost icon-only sm gh-board-x',
+              'data-tip': `Don't add to ${p.title}`,
+              'aria-label': `Remove ${p.title}`,
+              onclick: () => {
+                ghState.boards.delete(p.id);
+                renderProjectsPick();
+                renderBoards();
+                rememberBoards();
+              },
+            },
+            icon('x'),
+          ),
+        ),
         fields.length ? h('div', { class: 'gh-meta' }, ...fields) : h('span', { class: 'muted-sm' }, 'This board has no dropdown fields.'),
       );
     }),

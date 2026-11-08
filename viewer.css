@@ -385,3 +385,6 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: var(--rin
 html.embed, html.embed body { background: transparent !important; }
 html.embed body > :not(#gh):not(.tip):not(script) { display: none !important; }
 html.embed #gh { animation: none; }
+.gh-board-head .spacer { flex: 1; }
+.gh-board-x { width: 26px; height: 26px; margin: -4px -4px -4px 0; }
+.gh-board-x .icon { width: 14px; height: 14px; }
