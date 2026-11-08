@@ -254,29 +254,78 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: var(--rin
 .btn.danger.armed { background: var(--live); color: #fff; }
 
 /* ------------------------------------------------------------ GitHub issue modal */
-.gh-modal { width: min(620px, 100%); height: min(760px, 100%); grid-template-columns: 1fr; }
+.gh-modal { width: min(620px, 100%); height: min(720px, 100%); grid-template-columns: 1fr; transition: width .28s var(--ease), height .28s var(--ease); }
 .gh-modal h2 { display: flex; align-items: center; gap: 8px; }
 .gh-modal h2 .icon { width: 20px; height: 20px; }
 .gh-fields { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
 .gh-fields .field.grow { flex: 1; display: flex; flex-direction: column; min-height: 160px; }
 .gh-fields textarea { flex: 1; min-height: 160px; resize: none; font: 400 13px/1.55 var(--mono); }
-.modal-side select { font: 400 14px/1.4 var(--font); height: 40px; padding: 0 10px; border-radius: var(--r-field); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); width: 100%; }
-.modal-side select:focus { outline: none; border-color: var(--text); box-shadow: var(--ring); }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 96px; overflow: auto; }
-.chip-btn { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r-pill); border: 1px solid var(--border); font: 500 12.5px/1 var(--font); color: var(--muted); background: var(--surface); transition: background .15s var(--ease), border-color .15s var(--ease); }
-.chip-btn:hover { border-color: var(--border-strong); color: var(--text); }
-.chip-btn.on { background: var(--text); border-color: var(--text); color: #fff; }
-.chip-btn:focus-visible { box-shadow: var(--ring); }
-.chip-btn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c, #999); }
-.chip-btn img { width: 18px; height: 18px; border-radius: 50%; }
 .muted-sm { font-size: 13px; color: var(--faint); }
 .gh-tip { margin: 0; padding: 10px 12px; border-radius: var(--r-field); background: var(--bg); border: 1px solid var(--border); font-size: 13px; color: var(--muted); }
 .linkish { all: unset; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; color: var(--text); font-weight: 600; }
-.gh-setup, .gh-done { display: grid; justify-items: center; gap: 12px; text-align: center; padding: 40px 12px; flex: 1; align-content: center; }
+.gh-setup { display: grid; justify-items: center; gap: 12px; text-align: center; padding: 40px 12px; flex: 1; align-content: center; }
 .gh-setup p { margin: 0; color: var(--muted); }
-.gh-done .icon { width: 40px; height: 40px; padding: 8px; border-radius: 50%; background: rgb(26 143 80 / 0.12); color: var(--ok); box-sizing: content-box; }
-.gh-done strong { font-size: 17px; }
 #ghOpen .icon { width: 18px; height: 18px; }
+
+/* Picker trigger: looks like a field, opens a searchable list */
+.pick { all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 40px; padding: 0 10px 0 12px; border-radius: var(--r-field); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font: 500 14px/1 var(--font); transition: border-color .15s var(--ease), background .15s var(--ease); }
+.pick:hover { background: var(--bg); }
+.pick:focus-visible, .pick[aria-expanded="true"] { border-color: var(--text); box-shadow: var(--ring); }
+.pick:disabled { opacity: .55; cursor: default; }
+.pick .pick-val { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; }
+.pick .pick-val .txt { overflow: hidden; text-overflow: ellipsis; }
+.pick .icon { width: 16px; height: 16px; flex: none; color: var(--muted); }
+.pick .caret { width: 14px; height: 14px; transition: transform .18s var(--ease); }
+.pick[aria-expanded="true"] .caret { transform: rotate(180deg); }
+.pick .lock { width: 13px; height: 13px; color: var(--faint); }
+
+/* Labels / assignees / milestone sit in one tidy row, each a fixed-height button */
+.gh-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.pick.meta { height: 38px; font-size: 13px; padding: 0 8px 0 10px; }
+.pick.meta.has { background: var(--bg); }
+.pick.meta.has .lead { display: none; }
+.pv-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c, #999); flex: none; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08); }
+.pv-dots { display: inline-flex; flex: none; }
+.pv-dots .pv-dot + .pv-dot { margin-left: -3px; outline: 2px solid var(--bg); }
+.pv-avs { display: inline-flex; flex: none; }
+.pv-avs img { width: 20px; height: 20px; border-radius: 50%; outline: 2px solid var(--bg); background: var(--surface-2); }
+.pv-avs img + img { margin-left: -6px; }
+.pv-more { flex: none; font: 600 11.5px/1 var(--font); color: var(--muted); padding: 3px 6px; border-radius: var(--r-pill); background: var(--surface-2); }
+
+/* Popover list */
+.pop { position: fixed; z-index: 120; width: 300px; max-width: calc(100vw - 24px); display: flex; flex-direction: column; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg); overflow: hidden; animation: pick-in .16s var(--ease); transform-origin: top left; }
+.pop.up { transform-origin: bottom left; }
+.pop-head { padding: 10px 12px 6px; display: flex; align-items: center; justify-content: space-between; font: 700 12.5px/1 var(--font); color: var(--muted); }
+.pop-head button { all: unset; cursor: pointer; font: 600 12px/1 var(--font); color: var(--muted); padding: 4px 6px; border-radius: 6px; }
+.pop-head button:hover { background: var(--surface-2); color: var(--text); }
+.pop-search { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; border-radius: var(--r-field); border: 1px solid var(--border); background: var(--bg); }
+.pop-search:focus-within { border-color: var(--text); box-shadow: var(--ring); background: var(--surface); }
+.pop-search .icon { width: 15px; height: 15px; color: var(--faint); flex: none; }
+.pop-search input { all: unset; flex: 1; min-width: 0; font: 400 13.5px/1 var(--font); color: var(--text); }
+.pop-list { overflow: auto; max-height: 280px; padding: 2px 6px 6px; scrollbar-width: thin; }
+.pop-item { display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 8px; border-radius: 8px; cursor: pointer; font: 500 13.5px/1.3 var(--font); color: var(--text); }
+.pop-item.act { background: var(--surface-2); }
+.pop-item .check { width: 16px; height: 16px; flex: none; color: var(--text); visibility: hidden; }
+.pop-item[aria-selected="true"] .check { visibility: visible; }
+.pop-item .main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.pop-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop-item .sub { font-size: 12px; color: var(--faint); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop-item img { width: 22px; height: 22px; border-radius: 50%; flex: none; }
+.pop-item .lock { width: 13px; height: 13px; color: var(--faint); flex: none; }
+.pop-empty { padding: 18px 12px; text-align: center; font-size: 13px; color: var(--faint); }
+@keyframes pick-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* Success: the dialog shrinks to a small card */
+.gh-modal.is-done { width: min(380px, 100%); height: auto; }
+.gh-done { position: relative; display: grid; justify-items: center; gap: 6px; text-align: center; padding: 30px 24px 22px; animation: fade-in .22s ease-out; }
+.gh-done-x { position: absolute; top: 10px; right: 10px; }
+.gh-done-mark { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: rgb(26 143 80 / 0.12); color: var(--ok); margin-bottom: 6px; animation: pick-in .3s var(--ease); }
+.gh-done-mark .icon { width: 24px; height: 24px; }
+.gh-done strong { font-size: 16px; }
+.gh-done-sub { font-size: 13px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-done-actions { display: flex; gap: 8px; margin-top: 14px; width: 100%; }
+.gh-done-actions .btn { flex: 1; justify-content: center; }
+.gh-done-actions .btn.copied { color: var(--ok); border-color: rgb(26 143 80 / 0.35); }
 
 /* ------------------------------------------------------------ misc */
 .notfound { flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; text-align: center; padding: 40px 16px; }

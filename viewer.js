@@ -1200,7 +1200,7 @@ if (!driveMode) {
 
 // ---------------------------------------------------------------- GitHub issue (local server only)
 
-const ghState = { meta: null, labels: new Set(), assignees: new Set() };
+const ghState = { repos: [], repo: new Set(), meta: null, labels: new Set(), assignees: new Set(), milestone: new Set() };
 
 function ghError(message) {
   $('ghAlert').hidden = !message;
@@ -1214,50 +1214,207 @@ async function ghJson(url, opts) {
   return body;
 }
 
-function chipsFor(container, items, selected, render) {
-  if (!items.length) return container.replaceChildren(h('span', { class: 'muted-sm' }, 'None in this repository'));
-  container.replaceChildren(
-    ...items.map((item) => {
-      const key = render.key(item);
-      const b = h('button', { type: 'button', class: `chip-btn${selected.has(key) ? ' on' : ''}`, title: render.title?.(item) }, ...render.content(item));
-      b.addEventListener('click', () => {
-        selected.has(key) ? selected.delete(key) : selected.add(key);
-        b.classList.toggle('on', selected.has(key));
-      });
-      return b;
-    }),
-  );
+// ---- Searchable picker: one popover used for repository, labels, assignees and milestone.
+
+let openPop = null;
+
+function closePop() {
+  if (!openPop) return;
+  openPop.el.remove();
+  openPop.trigger.setAttribute('aria-expanded', 'false');
+  openPop = null;
+}
+
+/**
+ * cfg: { title, items, key, name, sub?, lead?, tail?, selected (Set), multi?, toggle?, placeholder, empty, onChange }
+ * Multi pickers stay open while you tick items; single pickers close on choice.
+ */
+function showPicker(trigger, cfg) {
+  if (openPop?.trigger === trigger) return closePop();
+  closePop();
+  const input = h('input', { type: 'text', placeholder: cfg.placeholder || 'Search', autocomplete: 'off', spellcheck: 'false', 'aria-label': cfg.placeholder || 'Search' });
+  const list = h('div', { class: 'pop-list', role: 'listbox', 'aria-multiselectable': cfg.multi ? 'true' : undefined });
+  const clear = cfg.multi || cfg.toggle ? h('button', { type: 'button' }, 'Clear') : null;
+  const el = h('div', { class: 'pop' }, h('div', { class: 'pop-head' }, h('span', {}, cfg.title), clear), h('label', { class: 'pop-search' }, icon('magnifying-glass'), input), list);
+  let shown = [];
+  let act = 0;
+
+  const mark = () => [...list.children].forEach((r, i) => r.classList.toggle('act', i === act));
+  const reveal = () => list.children[act]?.scrollIntoView({ block: 'nearest' });
+  const render = () => {
+    const q = input.value.trim().toLowerCase();
+    shown = cfg.items.filter((it) => !q || `${cfg.name(it)} ${cfg.sub?.(it) || ''}`.toLowerCase().includes(q));
+    act = Math.min(act, Math.max(0, shown.length - 1));
+    if (!shown.length) return list.replaceChildren(h('div', { class: 'pop-empty' }, cfg.items.length ? 'No matches' : cfg.empty || 'Nothing here'));
+    list.replaceChildren(
+      ...shown.map((it, i) => {
+        const sub = cfg.sub?.(it);
+        const row = h(
+          'div',
+          { class: `pop-item${i === act ? ' act' : ''}`, role: 'option', 'aria-selected': String(cfg.selected.has(cfg.key(it))) },
+          icon('check', 'icon check'),
+          cfg.lead?.(it),
+          h('span', { class: 'main' }, h('span', { class: 'name' }, cfg.name(it)), sub ? h('span', { class: 'sub' }, sub) : null),
+          cfg.tail?.(it),
+        );
+        row.addEventListener('mousedown', (e) => e.preventDefault());
+        row.addEventListener('click', () => choose(i));
+        row.addEventListener('mousemove', () => act !== i && ((act = i), mark()));
+        return row;
+      }),
+    );
+  };
+  const choose = (i) => {
+    const it = shown[i];
+    if (!it) return;
+    const k = cfg.key(it);
+    if (cfg.multi) {
+      cfg.selected.has(k) ? cfg.selected.delete(k) : cfg.selected.add(k);
+      list.children[i]?.setAttribute('aria-selected', String(cfg.selected.has(k)));
+      cfg.onChange();
+      return;
+    }
+    const was = cfg.selected.has(k);
+    cfg.selected.clear();
+    if (!(was && cfg.toggle)) cfg.selected.add(k);
+    cfg.onChange();
+    closePop();
+    trigger.focus();
+  };
+
+  clear?.addEventListener('click', () => {
+    cfg.selected.clear();
+    cfg.onChange();
+    if (cfg.multi) {
+      render();
+      input.focus();
+    } else {
+      closePop();
+      trigger.focus();
+    }
+  });
+  input.addEventListener('input', () => {
+    act = 0;
+    render();
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      act = Math.min(shown.length - 1, act + 1);
+      mark();
+      reveal();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      act = Math.max(0, act - 1);
+      mark();
+      reveal();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      choose(act);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closePop();
+      trigger.focus();
+    } else if (e.key === 'Tab') closePop();
+  });
+
+  // Single pickers open on the current choice; multi pickers list chosen items first.
+  if (cfg.multi) cfg.items = [...cfg.items.filter((it) => cfg.selected.has(cfg.key(it))), ...cfg.items.filter((it) => !cfg.selected.has(cfg.key(it)))];
+  else act = Math.max(0, cfg.items.findIndex((it) => cfg.selected.has(cfg.key(it))));
+  $('gh').append(el);
+  render();
+
+  // Place under the trigger, or above it when there is more room there.
+  const r = trigger.getBoundingClientRect();
+  el.style.width = `${Math.min(Math.max(r.width, 280), window.innerWidth - 24)}px`;
+  el.style.left = `${Math.max(12, Math.min(r.left, window.innerWidth - el.offsetWidth - 12))}px`;
+  const below = window.innerHeight - r.bottom - 18;
+  const above = r.top - 18;
+  const up = el.offsetHeight > below && above > below;
+  el.classList.toggle('up', up);
+  if (up) el.style.bottom = `${window.innerHeight - r.top + 6}px`;
+  else el.style.top = `${r.bottom + 6}px`;
+  list.style.maxHeight = `${Math.max(120, Math.min(280, (up ? above : below) - 96))}px`;
+
+  trigger.setAttribute('aria-expanded', 'true');
+  openPop = { el, trigger };
+  reveal();
+  input.focus();
+}
+
+document.addEventListener('mousedown', (e) => {
+  if (openPop && !openPop.el.contains(e.target) && !openPop.trigger.contains(e.target)) closePop();
+});
+window.addEventListener('resize', closePop);
+
+// ---- What each picker button shows when closed: short, one line, never wraps.
+
+function setPickVal(btn, nodes, has) {
+  btn.querySelector('.pick-val').replaceChildren(...nodes.filter(Boolean));
+  btn.classList.toggle('has', Boolean(has));
+}
+
+const placeholder = (text) => h('span', { class: 'muted-sm' }, text);
+const more = (n) => (n > 0 ? h('span', { class: 'pv-more' }, `+${n}`) : null);
+
+function renderRepoPick() {
+  const r = ghState.repos.find((x) => ghState.repo.has(x.fullName));
+  setPickVal($('ghRepo'), r ? [icon('github-logo'), h('span', { class: 'txt' }, r.fullName), r.private ? icon('lock-simple', 'icon lock') : null] : [placeholder('Choose a repository')], r);
+}
+
+function renderLabelsPick() {
+  const sel = (ghState.meta?.labels || []).filter((l) => ghState.labels.has(l.name));
+  if (!sel.length) return setPickVal($('ghLabels'), [placeholder('Labels')]);
+  setPickVal($('ghLabels'), [h('span', { class: 'pv-dots' }, ...sel.slice(0, 3).map((l) => h('span', { class: 'pv-dot', style: `--c: #${l.color}` }))), h('span', { class: 'txt' }, sel[0].name), more(sel.length - 1)], true);
+}
+
+function renderAssigneesPick() {
+  const sel = (ghState.meta?.assignees || []).filter((a) => ghState.assignees.has(a.login));
+  if (!sel.length) return setPickVal($('ghAssignees'), [placeholder('Assignees')]);
+  setPickVal($('ghAssignees'), [h('span', { class: 'pv-avs' }, ...sel.slice(0, 3).map((a) => h('img', { src: a.avatar, alt: '' }))), h('span', { class: 'txt' }, sel[0].login), more(sel.length - 1)], true);
+}
+
+function renderMilestonePick() {
+  const m = (ghState.meta?.milestones || []).find((x) => ghState.milestone.has(String(x.number)));
+  setPickVal($('ghMilestone'), m ? [h('span', { class: 'txt' }, m.title)] : [placeholder('Milestone')], m);
+}
+
+function resetMetaPicks(loading) {
+  for (const id of ['ghLabels', 'ghAssignees', 'ghMilestone']) $(id).disabled = Boolean(loading);
+  renderLabelsPick();
+  renderAssigneesPick();
+  renderMilestonePick();
 }
 
 async function loadRepoMeta(repo) {
+  ghState.meta = null;
   ghState.labels.clear();
   ghState.assignees.clear();
-  $('ghLabels').replaceChildren(h('span', { class: 'muted-sm' }, 'Loading…'));
-  $('ghAssignees').replaceChildren(h('span', { class: 'muted-sm' }, 'Loading…'));
-  $('ghMilestoneField').hidden = true;
+  ghState.milestone.clear();
+  $('ghMilestone').hidden = true;
+  resetMetaPicks(true);
   if (!repo) return;
   try {
     const meta = await ghJson(`/api/github/meta?repo=${encodeURIComponent(repo)}`);
+    if (!ghState.repo.has(repo)) return; // another repository was picked meanwhile
     ghState.meta = meta;
     // Pre-select the label that matches the report type.
     const kind = rec.report?.kind || rec.meta?.kind || 'bug';
     const wanted = kind === 'suggestion' ? /enhancement|suggestion|feature/i : /^bug$/i;
     const match = meta.labels.find((l) => wanted.test(l.name));
     if (match) ghState.labels.add(match.name);
-    chipsFor($('ghLabels'), meta.labels, ghState.labels, {
-      key: (l) => l.name,
-      title: (l) => l.description || l.name,
-      content: (l) => [h('span', { class: 'dot', style: `--c: #${l.color}` }), l.name],
-    });
-    chipsFor($('ghAssignees'), meta.assignees, ghState.assignees, {
-      key: (a) => a.login,
-      content: (a) => [h('img', { src: a.avatar, alt: '' }), a.login],
-    });
-    $('ghMilestoneField').hidden = !meta.milestones.length;
-    $('ghMilestone').replaceChildren(h('option', { value: '' }, 'No milestone'), ...meta.milestones.map((m) => h('option', { value: String(m.number) }, m.title)));
+    $('ghMilestone').hidden = !meta.milestones.length;
+    resetMetaPicks(false);
   } catch (err) {
     ghError(err.message);
   }
+}
+
+function setGhDone(done) {
+  $('ghForm').hidden = done;
+  $('ghDone').hidden = !done;
+  document.querySelector('.gh-modal').classList.toggle('is-done', done);
 }
 
 async function openGitHub() {
@@ -1266,7 +1423,7 @@ async function openGitHub() {
   const back = $('gh');
   back.hidden = false;
   ghError('');
-  $('ghDone').hidden = true;
+  setGhDone(false);
   $('ghFoot').hidden = false;
   $('ghCreate').disabled = false;
   const status = await ghJson('/api/github').catch(() => ({ configured: false }));
@@ -1274,6 +1431,10 @@ async function openGitHub() {
   $('ghFields').hidden = !status.configured;
   $('ghCreate').hidden = !status.configured;
   if (!status.configured) return;
+  ghState.repos = [];
+  ghState.repo.clear();
+  setPickVal($('ghRepo'), [placeholder('Loading repositories…')]);
+  resetMetaPicks(true);
   try {
     // Unsaved edits in the Report tab go into the issue too.
     const draft = await ghJson(`/api/recordings/${encodeURIComponent(id)}/github/draft`);
@@ -1287,17 +1448,19 @@ async function openGitHub() {
       $('ghBody').value = draft.body;
     }
     $('ghTip').hidden = draft.hasReport || Boolean(fromTab);
+    setTimeout(() => $('ghTitle').focus(), 30);
     const repos = await ghJson('/api/github/repos');
+    ghState.repos = repos;
     if (!repos.length) {
+      renderRepoPick();
       ghError('The token cannot see any repository with issues. Give it access in GitHub settings.');
       $('ghCreate').disabled = true;
       return;
     }
     const selected = repos.some((r) => r.fullName === draft.repo) ? draft.repo : repos[0].fullName;
-    $('ghRepo').replaceChildren(...repos.map((r) => h('option', { value: r.fullName, selected: r.fullName === selected ? '' : undefined }, `${r.fullName}${r.private ? ' (private)' : ''}`)));
-    $('ghRepo').value = selected;
+    ghState.repo.add(selected);
+    renderRepoPick();
     loadRepoMeta(selected);
-    setTimeout(() => $('ghTitle').focus(), 30);
   } catch (err) {
     ghError(err.message);
   }
@@ -1306,6 +1469,7 @@ async function openGitHub() {
 function closeGitHub() {
   const back = $('gh');
   if (back.hidden || back.classList.contains('closing')) return;
+  closePop();
   back.classList.add('closing');
   setTimeout(() => {
     back.hidden = true;
@@ -1317,17 +1481,96 @@ if (!driveMode) {
   $('ghOpen').addEventListener('click', openGitHub);
   $('ghClose').addEventListener('click', closeGitHub);
   $('ghCancel').addEventListener('click', closeGitHub);
+  $('ghDoneClose').addEventListener('click', closeGitHub);
   $('gh').addEventListener('click', (e) => e.target === $('gh') && closeGitHub());
   document.addEventListener('keydown', (e) => e.key === 'Escape' && !$('gh').hidden && closeGitHub());
-  $('ghRepo').addEventListener('change', () => loadRepoMeta($('ghRepo').value));
+  $('ghForm').addEventListener('scroll', closePop, true);
+
+  $('ghRepo').addEventListener('click', () => {
+    if (!ghState.repos.length) return;
+    showPicker($('ghRepo'), {
+      title: 'Repository',
+      placeholder: 'Search repositories',
+      items: ghState.repos,
+      key: (r) => r.fullName,
+      name: (r) => r.fullName.split('/')[1],
+      sub: (r) => r.fullName.split('/')[0],
+      tail: (r) => (r.private ? icon('lock-simple', 'icon lock') : null),
+      selected: ghState.repo,
+      onChange: () => {
+        renderRepoPick();
+        loadRepoMeta([...ghState.repo][0]);
+      },
+    });
+  });
+  $('ghLabels').addEventListener('click', () => {
+    if (!ghState.meta) return;
+    showPicker($('ghLabels'), {
+      title: 'Labels',
+      placeholder: 'Search labels',
+      empty: 'No labels in this repository',
+      multi: true,
+      items: ghState.meta.labels,
+      key: (l) => l.name,
+      name: (l) => l.name,
+      sub: (l) => l.description,
+      lead: (l) => h('span', { class: 'pv-dot', style: `--c: #${l.color}` }),
+      selected: ghState.labels,
+      onChange: renderLabelsPick,
+    });
+  });
+  $('ghAssignees').addEventListener('click', () => {
+    if (!ghState.meta) return;
+    showPicker($('ghAssignees'), {
+      title: 'Assignees',
+      placeholder: 'Search people',
+      empty: 'Nobody can be assigned',
+      multi: true,
+      items: ghState.meta.assignees,
+      key: (a) => a.login,
+      name: (a) => a.login,
+      lead: (a) => h('img', { src: a.avatar, alt: '' }),
+      selected: ghState.assignees,
+      onChange: renderAssigneesPick,
+    });
+  });
+  $('ghMilestone').addEventListener('click', () => {
+    if (!ghState.meta) return;
+    showPicker($('ghMilestone'), {
+      title: 'Milestone',
+      placeholder: 'Search milestones',
+      toggle: true,
+      items: ghState.meta.milestones,
+      key: (m) => String(m.number),
+      name: (m) => m.title,
+      selected: ghState.milestone,
+      onChange: renderMilestonePick,
+    });
+  });
+
   $('ghToReport').addEventListener('click', () => {
     closeGitHub();
     document.querySelector('[data-tab="report"]').click();
     $('what').focus();
   });
+  $('ghDoneCopy').addEventListener('click', async () => {
+    const btn = $('ghDoneCopy');
+    const ok = await copyText($('ghDoneLink').href);
+    btn.classList.toggle('copied', ok);
+    setIcon(btn, ok ? 'check' : 'warning-circle');
+    btn.querySelector('span:last-child').textContent = ok ? 'Copied' : "Couldn't copy";
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      setIcon(btn, 'copy');
+      btn.querySelector('span:last-child').textContent = 'Copy link';
+    }, 1600);
+  });
   $('ghForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     ghError('');
+    const repo = [...ghState.repo][0];
+    if (!repo) return ghError('Choose a repository.');
+    if (!$('ghTitle').value.trim()) return ghError('Add a title.');
     const btn = $('ghCreate');
     btn.disabled = true;
     btn.querySelector('span:last-child').textContent = 'Creating…';
@@ -1336,26 +1579,26 @@ if (!driveMode) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          repo: $('ghRepo').value,
+          repo,
           title: $('ghTitle').value,
           body: $('ghBody').value,
           labels: [...ghState.labels],
           assignees: [...ghState.assignees],
-          milestone: $('ghMilestone').value || null,
+          milestone: [...ghState.milestone][0] || null,
         }),
       });
       rec.github = [issue, ...(rec.github || [])];
       renderDetails();
       renderInfo();
-      $('ghFields').hidden = true;
-      $('ghFoot').hidden = true;
-      $('ghDone').hidden = false;
-      $('ghDoneText').textContent = `Issue #${issue.number} created in ${issue.repo}`;
+      $('ghDoneText').textContent = `Issue #${issue.number} created`;
+      $('ghDoneSub').textContent = issue.repo;
       $('ghDoneLink').href = issue.url;
+      setGhDone(true);
+      setTimeout(() => $('ghDoneLink').focus(), 30);
     } catch (err) {
       ghError(err.message);
-      btn.disabled = false;
     } finally {
+      btn.disabled = false;
       btn.querySelector('span:last-child').textContent = 'Create issue';
     }
   });
