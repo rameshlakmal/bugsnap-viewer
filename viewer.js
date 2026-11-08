@@ -9,6 +9,9 @@
 const $ = (id) => document.getElementById(id);
 const CONFIG = globalThis.SCREENREC_CONFIG || {};
 const params = new URLSearchParams(location.search);
+// ?embed=github: only the GitHub issue window, see-through, inside the screenshot editor.
+const embedGh = params.get('embed') === 'github' && window.parent !== window;
+const tellParent = (msg) => embedGh && window.parent.postMessage({ source: 'bugsnap-embed', ...msg }, '*');
 const driveMode = Boolean(CONFIG.driveApiKey);
 const id = driveMode ? params.get('id') || '' : location.pathname.split('/').filter(Boolean).pop();
 const videoParam = params.get('v') || '';
@@ -155,7 +158,9 @@ async function load() {
     // The video id is in the link, so streaming starts while the logs load.
     if (videoParam) video.src = driveMedia(videoParam);
   }
+  if (embedGh) document.documentElement.classList.add('embed');
   rec = await fetchRecording().catch(() => null);
+  if (embedGh && (driveMode || !rec)) return tellParent({ type: 'error', message: rec ? 'GitHub issues need the BugSnap server.' : 'Screenshot not found on the BugSnap server.' });
   if (!rec) {
     if (driveMode && videoParam) return useDriveFallback('Recording details could not be loaded, so steps and logs are not shown. The video plays in Google Drive’s player.');
     document.querySelector('.topbar').hidden = true;
@@ -171,6 +176,10 @@ async function load() {
   const t = Number(params.get('t'));
   if (t > 0) video.addEventListener('loadedmetadata', () => (video.currentTime = t), { once: true });
   if (!driveMode && params.has('review')) openReview();
+  if (embedGh) {
+    openGitHub();
+    tellParent({ type: 'ready' });
+  }
 }
 
 const uploading = (r) => ['pending', 'uploading', 'reserved'].includes(r?.drive?.status);
@@ -725,7 +734,7 @@ function buildReport() {
     '',
     '## Preconditions',
     `- Start on: ${meta.startUrl || 'unknown'}`,
-    `- ${env.browser || 'Unknown browser'} on ${env.os || meta.platform?.os || 'unknown OS'}, window ${size(meta.window)}, viewport ${size(meta.viewport)}`,
+    `- ${env.browser || 'Unknown browser'} on ${env.os || meta.platform?.os || 'unknown OS'}${meta.window?.width ? `, window ${size(meta.window)}` : ''}${meta.viewport?.width ? `, viewport ${size(meta.viewport)}` : ''}`,
     '',
     '## Steps to reproduce',
     ...(steps.length ? steps.map((e, i) => `${i + 1}. ${e.text}`) : isShot() ? [`1. Go to ${meta.startUrl || 'the page'}`, '2. _Describe what to do to see the problem._'] : ['1. _No steps captured_']),
@@ -1641,6 +1650,7 @@ async function openGitHub() {
   const back = $('gh');
   back.hidden = false;
   ghError('');
+  ghLastIssue = null;
   setGhDone(false);
   $('ghFoot').hidden = false;
   $('ghCreate').disabled = false;
@@ -1669,7 +1679,7 @@ async function openGitHub() {
     } else fillGhFromMarkdown(buildReport(), draft.title);
     ghBodyEdited = false;
     $('ghWhat').value = $('what').value || rec.meta?.description || '';
-    setGhKind(rec.report?.kind || 'bug');
+    setGhKind(rec.report?.kind || rec.meta?.kind || 'bug');
     $('ghAiHint').textContent = '';
     $('ghAiHint').className = 'ai-hint';
     $('ghWrite').classList.remove('armed');
@@ -1712,8 +1722,11 @@ function closeGitHub() {
   setTimeout(() => {
     back.hidden = true;
     back.classList.remove('closing');
+    tellParent({ type: 'close', description: $('ghWhat').value, issue: ghLastIssue });
   }, 180);
 }
+
+let ghLastIssue = null;
 
 if (!driveMode) {
   $('ghOpen').addEventListener('click', openGitHub);
@@ -1857,6 +1870,7 @@ if (!driveMode) {
         }),
       });
       rec.github = [issue, ...(rec.github || [])];
+      ghLastIssue = { number: issue.number, url: issue.url };
       renderDetails();
       renderInfo();
       $('ghDoneText').textContent = `Issue #${issue.number} created`;

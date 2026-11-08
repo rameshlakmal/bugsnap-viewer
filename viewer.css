@@ -380,3 +380,8 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: var(--rin
 #ghForm.scrolled-up .modal-foot { border-top-color: var(--border); }
 #ghForm #ghAlert { flex: none; }
 .gh-board .gh-meta { grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); }
+
+/* Embedded in the screenshot editor: just the issue window over a see-through page */
+html.embed, html.embed body { background: transparent !important; }
+html.embed body > :not(#gh):not(.tip):not(script) { display: none !important; }
+html.embed #gh { animation: none; }
