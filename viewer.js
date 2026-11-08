@@ -703,6 +703,21 @@ function timelineDuration() {
 
 // ---------------------------------------------------------------- bug report draft
 
+/** The annotated screenshot as a Markdown image (served from Drive), so GitHub shows it inline. */
+function shotImageMd() {
+  const fileId = isShot() ? rec?.drive?.videoId : null;
+  return fileId && /^[\w-]+$/.test(fileId) ? `![Screenshot](https://lh3.googleusercontent.com/d/${fileId}=w4000)` : '';
+}
+
+/** Add that image under "## Attachments" (or at the end) unless it is already there. */
+function withShotImage(text) {
+  const img = shotImageMd();
+  if (!img || text.includes(img)) return text;
+  const m = /^##\s*Attachments[^\n]*\n/im.exec(text);
+  if (m) return text.slice(0, m.index + m[0].length) + img + '\n' + text.slice(m.index + m[0].length);
+  return `${text}${text ? '\n\n' : ''}## Attachments\n${img}`;
+}
+
 function buildReport() {
   const meta = rec.meta || {};
   const env = meta.env || {};
@@ -740,6 +755,7 @@ function buildReport() {
     ...(steps.length ? steps.map((e, i) => `${i + 1}. ${e.text}`) : isShot() ? [`1. Go to ${meta.startUrl || 'the page'}`, '2. _Describe what to do to see the problem._'] : ['1. _No steps captured_']),
     '',
     '## Attachments',
+    ...(shotImageMd() ? [shotImageMd()] : []),
     `- ${isShot() ? 'Screenshot' : 'Recording'}: ${link}`,
     ...evidence,
     '',
@@ -1560,7 +1576,7 @@ function fillGhFromMarkdown(md, fallbackTitle) {
   const text = String(md || '').trim();
   const m = /^#\s+(.+)\n?/.exec(text);
   $('ghTitle').value = m ? m[1].trim() : fallbackTitle || rec.meta?.title || '';
-  $('ghBody').value = m ? text.slice(m[0].length).trim() : text;
+  $('ghBody').value = withShotImage(m ? text.slice(m[0].length).trim() : text);
 }
 
 function setGhKind(kind) {
