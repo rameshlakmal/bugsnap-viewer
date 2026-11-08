@@ -179,7 +179,19 @@
             <a class="btn primary" href="settings#github">Open Settings</a>
           </div>
           <div class="gh-fields" id="ghFields">
-            <p class="gh-tip" id="ghTip" hidden>Tip: <button type="button" class="linkish" id="ghToReport">write the report with Claude</button> first for a complete issue.</p>
+            <div class="ask gh-ask">
+              <label for="ghWhat">What happened?</label>
+              <textarea id="ghWhat" rows="2" placeholder="e.g. Unchecked a list and saved, but the bookmark still shows it. Any language is fine."></textarea>
+              <div class="ask-row">
+                <div class="segmented sm" role="group" aria-label="Report type">
+                  <button type="button" data-ghkind="bug" class="on" data-tip="Something is broken">Bug</button>
+                  <button type="button" data-ghkind="suggestion" data-tip="Something could be better">Suggestion</button>
+                </div>
+                <span class="ai-hint" id="ghAiHint"></span>
+                <span class="spacer"></span>
+                <button type="button" class="btn primary sm" id="ghWrite" data-tip="Claude fills the title and description from your words and the recording"><span class="icon" data-icon="sparkle"></span><span>Write with Claude</span></button>
+              </div>
+            </div>
             <div class="field"><label id="ghRepoLabel">Repository</label>
               <button type="button" class="pick" id="ghRepo" aria-haspopup="listbox" aria-labelledby="ghRepoLabel"><span class="pick-val"><span class="muted-sm">Loading…</span></span><span class="icon caret" data-icon="caret-down"></span></button>
             </div>

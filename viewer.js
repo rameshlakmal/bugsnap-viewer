@@ -1411,6 +1411,92 @@ async function loadRepoMeta(repo) {
   }
 }
 
+let ghBodyEdited = false;
+let ghAiLabel = 'Claude';
+
+/** "# Title\n\nbody" -> title field + description field. */
+function fillGhFromMarkdown(md, fallbackTitle) {
+  const text = String(md || '').trim();
+  const m = /^#\s+(.+)\n?/.exec(text);
+  $('ghTitle').value = m ? m[1].trim() : fallbackTitle || rec.meta?.title || '';
+  $('ghBody').value = m ? text.slice(m[0].length).trim() : text;
+}
+
+function setGhKind(kind) {
+  document.querySelectorAll('[data-ghkind]').forEach((b) => b.classList.toggle('on', b.dataset.ghkind === kind));
+}
+
+async function writeGhWithClaude() {
+  const btn = $('ghWrite');
+  const hint = $('ghAiHint');
+  if (!$('ghWhat').value.trim()) {
+    hint.className = 'ai-hint bad';
+    hint.textContent = 'Describe what happened first.';
+    return $('ghWhat').focus();
+  }
+  if (ghBodyEdited && !btn.classList.contains('armed')) {
+    btn.classList.add('armed');
+    btn.querySelector('span:last-child').textContent = 'Replace my edits?';
+    hint.className = 'ai-hint';
+    hint.textContent = '';
+    setTimeout(() => {
+      if (!btn.classList.contains('armed')) return;
+      btn.classList.remove('armed');
+      btn.querySelector('span:last-child').textContent = 'Write with Claude';
+    }, 4000);
+    return;
+  }
+  btn.classList.remove('armed');
+  const kind = document.querySelector('[data-ghkind].on')?.dataset.ghkind || 'bug';
+  btn.disabled = true;
+  btn.classList.add('busy');
+  $('ghCreate').disabled = true;
+  $('ghBody').classList.add('writing');
+  btn.querySelector('span:last-child').textContent = 'Writing…';
+  hint.className = 'ai-hint';
+  hint.textContent = 'About 10 seconds';
+  try {
+    const res = await fetch(`/api/recordings/${encodeURIComponent(id)}/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: $('ghWhat').value, kind }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Server answered ${res.status}`);
+    // Keep the Report tab in step: same report, same description.
+    rec.report = body;
+    rec.meta = { ...rec.meta, description: $('ghWhat').value };
+    $('what').value = $('ghWhat').value;
+    reportDirty = false;
+    $('saveReport').hidden = true;
+    renderReport();
+    renderDetails();
+    fillGhFromMarkdown(body.markdown);
+    const link = shareLink();
+    if (link && !$('ghBody').value.includes(link)) $('ghBody').value += `\n\n**${isShot() ? 'Screenshot' : 'Recording'}:** ${link}`;
+    ghBodyEdited = false;
+    hint.textContent = `Written by ${ghAiLabel}`;
+    // Match the label to the report type when the repo has one.
+    if (ghState.meta) {
+      const wanted = kind === 'suggestion' ? /enhancement|suggestion|feature/i : /^bug$/i;
+      const other = kind === 'suggestion' ? /^bug$/i : /enhancement|suggestion|feature/i;
+      for (const l of ghState.meta.labels) if (other.test(l.name)) ghState.labels.delete(l.name);
+      const match = ghState.meta.labels.find((l) => wanted.test(l.name));
+      if (match) ghState.labels.add(match.name);
+      renderLabelsPick();
+    }
+  } catch (err) {
+    hint.className = 'ai-hint bad';
+    hint.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('busy');
+    $('ghCreate').disabled = false;
+    $('ghBody').classList.remove('writing');
+    btn.querySelector('span:last-child').textContent = rec.report?.model ? 'Rewrite with Claude' : 'Write with Claude';
+  }
+}
+
 function setGhDone(done) {
   $('ghForm').hidden = done;
   $('ghDone').hidden = !done;
@@ -1438,17 +1524,33 @@ async function openGitHub() {
   try {
     // Unsaved edits in the Report tab go into the issue too.
     const draft = await ghJson(`/api/recordings/${encodeURIComponent(id)}/github/draft`);
-    const fromTab = reportDirty ? $('report').value : null;
-    if (fromTab) {
-      const m = /^#\s+(.+)\n?/.exec(fromTab.trim());
-      $('ghTitle').value = m ? m[1].trim() : draft.title;
-      $('ghBody').value = m ? fromTab.trim().slice(m[0].length).trim() : fromTab;
-    } else {
+    // Unsaved Report tab edits first, then a saved report, else the template filled from the recording
+    // (preconditions, steps, attachments), so the issue is useful before anything is written.
+    if (reportDirty) fillGhFromMarkdown($('report').value, draft.title);
+    else if (draft.hasReport) {
       $('ghTitle').value = draft.title;
       $('ghBody').value = draft.body;
-    }
-    $('ghTip').hidden = draft.hasReport || Boolean(fromTab);
-    setTimeout(() => $('ghTitle').focus(), 30);
+    } else fillGhFromMarkdown(buildReport(), draft.title);
+    ghBodyEdited = false;
+    $('ghWhat').value = $('what').value || rec.meta?.description || '';
+    setGhKind(rec.report?.kind || 'bug');
+    $('ghAiHint').textContent = '';
+    $('ghAiHint').className = 'ai-hint';
+    $('ghWrite').classList.remove('armed');
+    $('ghWrite').disabled = false;
+    $('ghWrite').querySelector('span:last-child').textContent = rec.report?.model ? 'Rewrite with Claude' : 'Write with Claude';
+    fetch('/api/ai')
+      .then((r) => r.json())
+      .then((s) => {
+        ghAiLabel = s?.label ? s.label.split(' · ')[0] : 'Claude';
+        if (s && s.available === false) {
+          $('ghWrite').disabled = true;
+          $('ghAiHint').className = 'ai-hint bad';
+          $('ghAiHint').textContent = 'Set up AI reports in BugSnap Settings';
+        }
+      })
+      .catch(() => {});
+    setTimeout(() => $('ghWhat').focus(), 30);
     const repos = await ghJson('/api/github/repos');
     ghState.repos = repos;
     if (!repos.length) {
@@ -1548,11 +1650,16 @@ if (!driveMode) {
     });
   });
 
-  $('ghToReport').addEventListener('click', () => {
-    closeGitHub();
-    document.querySelector('[data-tab="report"]').click();
-    $('what').focus();
+  document.querySelectorAll('[data-ghkind]').forEach((b) => b.addEventListener('click', () => setGhKind(b.dataset.ghkind)));
+  $('ghWrite').addEventListener('click', writeGhWithClaude);
+  $('ghWhat').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      writeGhWithClaude();
+    }
   });
+  $('ghBody').addEventListener('input', () => (ghBodyEdited = true));
+  $('ghTitle').addEventListener('input', () => (ghBodyEdited = true));
   $('ghDoneCopy').addEventListener('click', async () => {
     const btn = $('ghDoneCopy');
     const ok = await copyText($('ghDoneLink').href);

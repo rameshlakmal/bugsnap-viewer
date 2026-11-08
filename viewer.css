@@ -254,14 +254,19 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: var(--rin
 .btn.danger.armed { background: var(--live); color: #fff; }
 
 /* ------------------------------------------------------------ GitHub issue modal */
-.gh-modal { width: min(620px, 100%); height: min(720px, 100%); grid-template-columns: 1fr; transition: width .28s var(--ease), height .28s var(--ease); }
+.gh-modal { width: min(640px, 100%); height: min(800px, 100%); grid-template-columns: 1fr; transition: width .28s var(--ease), height .28s var(--ease); }
 .gh-modal h2 { display: flex; align-items: center; gap: 8px; }
 .gh-modal h2 .icon { width: 20px; height: 20px; }
 .gh-fields { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
 .gh-fields .field.grow { flex: 1; display: flex; flex-direction: column; min-height: 160px; }
 .gh-fields textarea { flex: 1; min-height: 160px; resize: none; font: 400 13px/1.55 var(--mono); }
 .muted-sm { font-size: 13px; color: var(--faint); }
-.gh-tip { margin: 0; padding: 10px 12px; border-radius: var(--r-field); background: var(--bg); border: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+.gh-ask { flex: none; }
+.gh-ask textarea { min-height: 56px; resize: none; font: 400 14px/1.5 var(--font); }
+.gh-ask .ai-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ghWrite.armed { background: var(--live); border-color: var(--live); }
+#ghBody.writing { color: var(--faint); background: linear-gradient(90deg, var(--bg) 0%, var(--surface-2) 50%, var(--bg) 100%) 0 0 / 200% 100%; animation: gh-shimmer 1.4s linear infinite; }
+@keyframes gh-shimmer { to { background-position: -200% 0; } }
 .linkish { all: unset; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; color: var(--text); font-weight: 600; }
 .gh-setup { display: grid; justify-items: center; gap: 12px; text-align: center; padding: 40px 12px; flex: 1; align-content: center; }
 .gh-setup p { margin: 0; color: var(--muted); }
