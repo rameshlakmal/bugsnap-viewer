@@ -257,7 +257,7 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: var(--rin
 .gh-modal { width: min(640px, 100%); height: min(800px, 100%); grid-template-columns: 1fr; transition: width .28s var(--ease), height .28s var(--ease); }
 .gh-modal h2 { display: flex; align-items: center; gap: 8px; }
 .gh-modal h2 .icon { width: 20px; height: 20px; }
-.gh-fields { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+.gh-fields { display: flex; flex-direction: column; gap: 14px; flex: 1 0 auto; }
 .gh-fields .field.grow { flex: 1; display: flex; flex-direction: column; min-height: 160px; }
 .gh-fields textarea { flex: 1; min-height: 160px; resize: none; font: 400 13px/1.55 var(--mono); }
 .muted-sm { font-size: 13px; color: var(--faint); }
@@ -285,7 +285,7 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: var(--rin
 .pick .lock { width: 13px; height: 13px; color: var(--faint); }
 
 /* Labels / assignees / milestone sit in one tidy row, each a fixed-height button */
-.gh-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.gh-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; }
 .pick.meta { height: 38px; font-size: 13px; padding: 0 8px 0 10px; }
 .pick.meta.has { background: var(--bg); }
 .pick.meta.has .lead { display: none; }
@@ -361,3 +361,22 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: var(--rin
   .kv { grid-template-columns: 1fr; }
   .kv dt { padding-bottom: 0; }
 }
+
+/* Project boards inside the GitHub issue form */
+.gh-boards { display: grid; gap: 8px; }
+.gh-boards:empty { display: none; }
+.gh-board { display: grid; gap: 8px; padding: 10px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border); animation: fade-in .18s ease-out; }
+.gh-board-head { display: flex; align-items: center; gap: 6px; min-width: 0; font: 600 13px/1.2 var(--font); }
+.gh-board-head .icon { width: 15px; height: 15px; color: var(--muted); flex: none; }
+.gh-board-head .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-board .pick.meta { background: var(--surface); }
+.pv-field { flex: none; color: var(--faint); font-weight: 500; }
+.pop-item > .icon:not(.check) { width: 16px; height: 16px; color: var(--muted); flex: none; }
+.gh-done-warn { margin: 6px 0 0; padding: 8px 10px; border-radius: var(--r-field); background: var(--live-soft); color: var(--live); font-size: 12.5px; line-height: 1.45; text-align: left; }
+
+/* Long forms scroll; Create issue stays in reach at the bottom */
+#ghForm { padding-bottom: 0; scroll-padding-bottom: 84px; }
+#ghForm .modal-foot { position: sticky; bottom: 0; z-index: 2; margin: 0 -20px; padding: 12px 20px 18px; background: var(--surface); border-top: 1px solid transparent; transition: border-color .15s; }
+#ghForm.scrolled-up .modal-foot { border-top-color: var(--border); }
+#ghForm #ghAlert { flex: none; }
+.gh-board .gh-meta { grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); }

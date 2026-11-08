@@ -1200,7 +1200,7 @@ if (!driveMode) {
 
 // ---------------------------------------------------------------- GitHub issue (local server only)
 
-const ghState = { repos: [], repo: new Set(), meta: null, labels: new Set(), assignees: new Set(), milestone: new Set() };
+const ghState = { repos: [], repo: new Set(), meta: null, labels: new Set(), assignees: new Set(), milestone: new Set(), projects: [], projectsError: null, boards: new Set(), fieldSel: {} };
 
 function ghError(message) {
   $('ghAlert').hidden = !message;
@@ -1220,9 +1220,11 @@ let openPop = null;
 
 function closePop() {
   if (!openPop) return;
-  openPop.el.remove();
-  openPop.trigger.setAttribute('aria-expanded', 'false');
+  const { el, trigger, onClose } = openPop;
+  el.remove();
+  trigger.setAttribute('aria-expanded', 'false');
   openPop = null;
+  onClose?.();
 }
 
 /**
@@ -1338,7 +1340,7 @@ function showPicker(trigger, cfg) {
   list.style.maxHeight = `${Math.max(120, Math.min(280, (up ? above : below) - 96))}px`;
 
   trigger.setAttribute('aria-expanded', 'true');
-  openPop = { el, trigger };
+  openPop = { el, trigger, onClose: cfg.onClose };
   reveal();
   input.focus();
 }
@@ -1387,6 +1389,135 @@ function resetMetaPicks(loading) {
   renderMilestonePick();
 }
 
+// ---- Project boards: pick any number, then each board's dropdown fields (Status, Priority, …).
+// The issue is added to the boards and the values are set right after it is created.
+
+const BOARD_COLORS = { GRAY: '#8b949e', BLUE: '#2f81f7', GREEN: '#2da44e', YELLOW: '#d4a72c', ORANGE: '#e16f24', RED: '#e5484d', PINK: '#db61a2', PURPLE: '#8250df' };
+const boardKey = (repo) => `bugsnap.gh.boards.${repo}`;
+
+function fieldSel(projectId, fieldId) {
+  ghState.fieldSel[projectId] ||= {};
+  return (ghState.fieldSel[projectId][fieldId] ||= new Set());
+}
+
+function rememberBoards() {
+  const repo = [...ghState.repo][0];
+  if (!repo) return;
+  const values = {};
+  for (const pid of ghState.boards) {
+    values[pid] = {};
+    for (const [fid, set] of Object.entries(ghState.fieldSel[pid] || {})) if (set.size) values[pid][fid] = [...set][0];
+  }
+  try {
+    localStorage.setItem(boardKey(repo), JSON.stringify({ boards: [...ghState.boards], values }));
+  } catch {
+    /* storage off: nothing to remember */
+  }
+}
+
+/** Last boards and values used with this repository, kept only where they still exist. */
+function restoreBoards(repo) {
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(boardKey(repo)) || 'null');
+  } catch {
+    saved = null;
+  }
+  for (const pid of saved?.boards || []) {
+    const p = ghState.projects.find((x) => x.id === pid);
+    if (!p) continue;
+    ghState.boards.add(pid);
+    for (const [fid, oid] of Object.entries(saved.values?.[pid] || {})) {
+      if (p.fields.some((f) => f.id === fid && f.options.some((o) => o.id === oid))) fieldSel(pid, fid).add(oid);
+    }
+  }
+}
+
+function renderProjectsPick() {
+  const sel = ghState.projects.filter((p) => ghState.boards.has(p.id));
+  if (!sel.length) return setPickVal($('ghProjects'), [placeholder('Project')]);
+  setPickVal($('ghProjects'), [icon('squares-four'), h('span', { class: 'txt' }, sel[0].title), more(sel.length - 1)], true);
+}
+
+function renderBoards() {
+  const sel = ghState.projects.filter((p) => ghState.boards.has(p.id));
+  $('ghBoards').replaceChildren(
+    ...sel.map((p) => {
+      const fields = p.fields.map((f) => {
+        const btn = h(
+          'button',
+          { type: 'button', class: 'pick meta field-pick', 'aria-haspopup': 'listbox', 'data-tip': `${f.name} on ${p.title}` },
+          h('span', { class: 'pick-val' }),
+          icon('caret-down', 'icon caret'),
+        );
+        const paint = () => {
+          const o = f.options.find((x) => fieldSel(p.id, f.id).has(x.id));
+          setPickVal(btn, o ? [h('span', { class: 'pv-field' }, f.name), h('span', { class: 'pv-dot', style: `--c: ${BOARD_COLORS[o.color] || '#999'}` }), h('span', { class: 'txt' }, o.name)] : [placeholder(f.name)], o);
+        };
+        paint();
+        btn.addEventListener('click', () =>
+          showPicker(btn, {
+            title: f.name,
+            placeholder: `Search ${f.name.toLowerCase()}`,
+            empty: 'No options',
+            toggle: true,
+            items: f.options,
+            key: (o) => o.id,
+            name: (o) => o.name,
+            lead: (o) => h('span', { class: 'pv-dot', style: `--c: ${BOARD_COLORS[o.color] || '#999'}` }),
+            selected: fieldSel(p.id, f.id),
+            onChange: () => {
+              paint();
+              rememberBoards();
+            },
+          }),
+        );
+        return btn;
+      });
+      return h(
+        'div',
+        { class: 'gh-board' },
+        h('div', { class: 'gh-board-head' }, icon('squares-four'), h('span', { class: 'txt' }, p.title), p.linked ? null : h('span', { class: 'pv-more' }, 'Not linked to this repo')),
+        fields.length ? h('div', { class: 'gh-meta' }, ...fields) : h('span', { class: 'muted-sm' }, 'This board has no dropdown fields.'),
+      );
+    }),
+  );
+}
+
+async function loadProjects(repo) {
+  ghState.projects = [];
+  ghState.projectsError = null;
+  ghState.boards.clear();
+  ghState.fieldSel = {};
+  $('ghBoards').replaceChildren();
+  $('ghProjects').hidden = false;
+  $('ghProjects').disabled = true;
+  renderProjectsPick();
+  try {
+    const res = await ghJson(`/api/github/projects?repo=${encodeURIComponent(repo)}`);
+    if (!ghState.repo.has(repo)) return;
+    ghState.projects = res.projects || [];
+    ghState.projectsError = res.error || null;
+  } catch (err) {
+    if (!ghState.repo.has(repo)) return;
+    ghState.projectsError = err.message;
+  }
+  // No boards and nothing to explain: keep the row short.
+  $('ghProjects').hidden = !ghState.projects.length && !ghState.projectsError;
+  $('ghProjects').disabled = false;
+  restoreBoards(repo);
+  renderProjectsPick();
+  renderBoards();
+}
+
+/** What the server needs to put the new issue on boards. */
+function boardsPayload() {
+  return [...ghState.boards].map((pid) => ({
+    projectId: pid,
+    values: Object.fromEntries(Object.entries(ghState.fieldSel[pid] || {}).filter(([, s]) => s.size).map(([fid, s]) => [fid, [...s][0]])),
+  }));
+}
+
 async function loadRepoMeta(repo) {
   ghState.meta = null;
   ghState.labels.clear();
@@ -1395,6 +1526,7 @@ async function loadRepoMeta(repo) {
   $('ghMilestone').hidden = true;
   resetMetaPicks(true);
   if (!repo) return;
+  loadProjects(repo);
   try {
     const meta = await ghJson(`/api/github/meta?repo=${encodeURIComponent(repo)}`);
     if (!ghState.repo.has(repo)) return; // another repository was picked meanwhile
@@ -1519,6 +1651,10 @@ async function openGitHub() {
   if (!status.configured) return;
   ghState.repos = [];
   ghState.repo.clear();
+  ghState.projects = [];
+  ghState.boards.clear();
+  $('ghBoards').replaceChildren();
+  $('ghProjects').hidden = true;
   setPickVal($('ghRepo'), [placeholder('Loading repositories…')]);
   resetMetaPicks(true);
   try {
@@ -1587,6 +1723,10 @@ if (!driveMode) {
   $('gh').addEventListener('click', (e) => e.target === $('gh') && closeGitHub());
   document.addEventListener('keydown', (e) => e.key === 'Escape' && !$('gh').hidden && closeGitHub());
   $('ghForm').addEventListener('scroll', closePop, true);
+  // A line above the pinned footer while there is more form below it.
+  const footLine = () => { const f = $('ghForm'); f.classList.toggle('scrolled-up', f.scrollHeight - f.scrollTop - f.clientHeight > 2); };
+  $('ghForm').addEventListener('scroll', footLine);
+  new ResizeObserver(footLine).observe($('ghFields'));
 
   $('ghRepo').addEventListener('click', () => {
     if (!ghState.repos.length) return;
@@ -1650,6 +1790,27 @@ if (!driveMode) {
     });
   });
 
+  $('ghProjects').addEventListener('click', () => {
+    showPicker($('ghProjects'), {
+      title: 'Project boards',
+      placeholder: 'Search boards',
+      empty: ghState.projectsError || 'No project boards',
+      multi: true,
+      items: ghState.projects,
+      key: (p) => p.id,
+      name: (p) => p.title,
+      sub: (p) => `${p.linked ? 'Linked to this repo' : 'Owner board'} · ${p.fields.length ? p.fields.map((f) => f.name).join(', ') : 'no dropdown fields'}`,
+      lead: () => icon('squares-four'),
+      selected: ghState.boards,
+      onChange: () => {
+        renderProjectsPick();
+        renderBoards();
+        rememberBoards();
+      },
+      // Boards sit under the description: bring them into view once the list closes.
+      onClose: () => $('ghBoards').lastElementChild?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
+    });
+  });
   document.querySelectorAll('[data-ghkind]').forEach((b) => b.addEventListener('click', () => setGhKind(b.dataset.ghkind)));
   $('ghWrite').addEventListener('click', writeGhWithClaude);
   $('ghWhat').addEventListener('keydown', (e) => {
@@ -1692,13 +1853,18 @@ if (!driveMode) {
           labels: [...ghState.labels],
           assignees: [...ghState.assignees],
           milestone: [...ghState.milestone][0] || null,
+          projects: boardsPayload(),
         }),
       });
       rec.github = [issue, ...(rec.github || [])];
       renderDetails();
       renderInfo();
       $('ghDoneText').textContent = `Issue #${issue.number} created`;
-      $('ghDoneSub').textContent = issue.repo;
+      const failed = (issue.boards || []).filter((b) => !b.ok);
+      const added = (issue.boards || []).filter((b) => b.ok).map((b) => ghState.projects.find((p) => p.id === b.projectId)?.title).filter(Boolean);
+      $('ghDoneSub').textContent = added.length ? `${issue.repo} · on ${added.join(', ')}` : issue.repo;
+      $('ghDoneWarn').hidden = !failed.length;
+      $('ghDoneWarn').textContent = failed.length ? `Couldn't add it to ${failed.map((b) => ghState.projects.find((p) => p.id === b.projectId)?.title || 'a board').join(', ')}: ${failed[0].error}` : '';
       $('ghDoneLink').href = issue.url;
       setGhDone(true);
       setTimeout(() => $('ghDoneLink').focus(), 30);
