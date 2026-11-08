@@ -1738,7 +1738,7 @@ function closeGitHub() {
   setTimeout(() => {
     back.hidden = true;
     back.classList.remove('closing');
-    tellParent({ type: 'close', description: $('ghWhat').value, issue: ghLastIssue });
+    tellParent({ type: 'close', description: $('ghWhat').value, kind: document.querySelector('[data-ghkind].on')?.dataset.ghkind, issue: ghLastIssue });
   }, 180);
 }
 
