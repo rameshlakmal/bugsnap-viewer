@@ -388,3 +388,17 @@ html.embed #gh { animation: none; }
 .gh-board-head .spacer { flex: 1; }
 .gh-board-x { width: 26px; height: 26px; margin: -4px -4px -4px 0; }
 .gh-board-x .icon { width: 14px; height: 14px; }
+
+/* Frame captured: a small dark pill at the bottom, like the recording bar */
+.frame-toast { position: fixed; left: 50%; bottom: 24px; z-index: 150; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 8px 8px 8px 14px; border-radius: 999px; background: #18181b; color: #fafafa; box-shadow: 0 10px 30px rgb(0 0 0 / 0.25); font: 500 13.5px/1.2 var(--font); animation: rise-in .22s var(--ease); }
+.frame-toast[hidden] { display: none; }
+.frame-toast.out { animation: fade-out .2s ease-in forwards; }
+.frame-toast > .icon { width: 17px; height: 17px; flex: none; color: #4ade80; }
+.frame-toast[data-state="busy"] > .icon { color: #a1a1aa; animation: ft-spin .9s linear infinite; }
+.frame-toast[data-state="error"] > .icon { color: #f87171; }
+.frame-toast[data-state="busy"], .frame-toast[data-state="error"] { padding-right: 16px; }
+.ft-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ft-btn { all: unset; cursor: pointer; flex: none; padding: 7px 12px; border-radius: 999px; background: rgb(255 255 255 / 0.1); color: #fafafa; font: 600 12.5px/1 var(--font); }
+.ft-btn:hover { background: rgb(255 255 255 / 0.18); }
+.ft-btn:focus-visible { box-shadow: 0 0 0 2px rgb(255 255 255 / 0.5); }
+@keyframes ft-spin { to { transform: rotate(360deg); } }

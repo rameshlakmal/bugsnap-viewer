@@ -650,6 +650,8 @@ function renderInfo() {
     ['Duration', durationSec ? fmt(durationSec) : undefined],
     [isShot() ? 'Captured by' : 'Recorded by', meta.reporter],
     ['GitHub issue', rec.github?.length ? [icon('github-logo'), ...rec.github.map((g, i) => [i ? ', ' : '', link(g.url, `#${g.number}`)]).flat()] : undefined],
+    ['From recording', rec.fromRecordingInfo ? [icon('video-camera'), link(atTime(rec.fromRecordingInfo.viewerUrl, rec.fromRecordingInfo.at), `${rec.fromRecordingInfo.title} at ${fmt(rec.fromRecordingInfo.at)}`)] : undefined],
+    ['Frames', rec.frameShots?.length ? [icon('camera'), ...rec.frameShots.map((f, i) => [i ? ', ' : '', link(f.viewerUrl, fmt(f.at))]).flat()] : undefined],
     ['Type', isShot() ? `Screenshot${rec.image?.width ? ` (${rec.image.width} × ${rec.image.height})` : ''}` : meta.mode === 'desktop' ? `Screen (${{ monitor: 'entire screen', window: 'window', browser: 'browser tab' }[env.displaySurface] || 'screen'})` : 'Browser tab'],
     ['Location', loc && loc.latitude !== undefined
       ? [icon('map-pin'), link(`https://www.openstreetmap.org/?mlat=${loc.latitude}&mlon=${loc.longitude}#map=14/${loc.latitude}/${loc.longitude}`, `${loc.latitude.toFixed(3)}, ${loc.longitude.toFixed(3)}`)]
@@ -703,20 +705,29 @@ function timelineDuration() {
 
 // ---------------------------------------------------------------- bug report draft
 
-/** The annotated screenshot as a Markdown image (served from Drive), so GitHub shows it inline. */
-function shotImageMd() {
-  const fileId = isShot() ? rec?.drive?.videoId : null;
-  return fileId && /^[\w-]+$/.test(fileId) ? `![Screenshot](https://lh3.googleusercontent.com/d/${fileId}=w4000)` : '';
+/** Drive image address for a public screenshot file, so GitHub shows it inline. */
+const driveImage = (fileId) => (fileId && /^[\w-]+$/.test(fileId) ? `https://lh3.googleusercontent.com/d/${fileId}=w4000` : '');
+
+/** Markdown images for the issue: this screenshot, or the frames captured from this recording. */
+function imageLines() {
+  if (isShot()) {
+    const url = driveImage(rec?.drive?.videoId);
+    return url ? [`![Screenshot](${url})`] : [];
+  }
+  return (rec?.frameShots || []).filter((f) => driveImage(f.fileId)).map((f) => `![Frame at ${fmt(f.at)}](${driveImage(f.fileId)})`);
 }
 
-/** Add that image under "## Attachments" (or at the end) unless it is already there. */
+/** Add those images under "## Attachments" (or at the end), each once. */
 function withShotImage(text) {
-  const img = shotImageMd();
-  if (!img || text.includes(img)) return text;
+  const lines = imageLines().filter((l) => !text.includes(l));
+  if (!lines.length) return text;
+  const block = lines.join('\n');
   const m = /^##\s*Attachments[^\n]*\n/im.exec(text);
-  if (m) return text.slice(0, m.index + m[0].length) + img + '\n' + text.slice(m.index + m[0].length);
-  return `${text}${text ? '\n\n' : ''}## Attachments\n${img}`;
+  if (m) return text.slice(0, m.index + m[0].length) + block + '\n' + text.slice(m.index + m[0].length);
+  return `${text}${text ? '\n\n' : ''}## Attachments\n${block}`;
 }
+
+const atTime = (url, sec) => `${url}${url.includes('?') ? '&' : '?'}t=${Math.floor(sec)}`;
 
 function buildReport() {
   const meta = rec.meta || {};
@@ -755,8 +766,9 @@ function buildReport() {
     ...(steps.length ? steps.map((e, i) => `${i + 1}. ${e.text}`) : isShot() ? [`1. Go to ${meta.startUrl || 'the page'}`, '2. _Describe what to do to see the problem._'] : ['1. _No steps captured_']),
     '',
     '## Attachments',
-    ...(shotImageMd() ? [shotImageMd()] : []),
+    ...imageLines(),
     `- ${isShot() ? 'Screenshot' : 'Recording'}: ${link}`,
+    ...(rec.fromRecordingInfo ? [`- From recording at ${fmt(rec.fromRecordingInfo.at)}: ${atTime(rec.fromRecordingInfo.shareUrl || rec.fromRecordingInfo.viewerUrl, rec.fromRecordingInfo.at)}`] : []),
     ...evidence,
     '',
     '## Actual result',
@@ -1951,20 +1963,109 @@ if (!driveMode) {
 
 // ---------------------------------------------------------------- annotate (screenshots, local server)
 // The editor lives in the extension; its content script on this page opens it.
-if (!driveMode) {
-  $('annotate').addEventListener('click', () => {
+
+/** Ask the extension to open a screenshot in the editor. Resolves false if it did not answer. */
+function openInEditor(shotId) {
+  return new Promise((resolve) => {
     let answered = false;
     const onAck = (e) => {
       if (e.source === window && e.data?.source === 'bugsnap-ext' && e.data.type === 'annotate-ack') answered = true;
     };
     window.addEventListener('message', onAck);
-    window.postMessage({ source: 'bugsnap-page', type: 'annotate', id }, location.origin);
+    window.postMessage({ source: 'bugsnap-page', type: 'annotate', id: shotId }, location.origin);
     setTimeout(() => {
       window.removeEventListener('message', onAck);
-      if (!answered) flash($('annotate'), 'warning-circle', 'Needs the extension');
+      resolve(answered);
     }, 900);
   });
 }
+
+if (!driveMode) {
+  $('annotate').addEventListener('click', async () => {
+    if (!(await openInEditor(id))) flash($('annotate'), 'warning-circle', 'Needs the extension');
+  });
+}
+
+// ---------------------------------------------------------------- capture a frame (recordings, local server)
+// The frame at the current moment becomes a screenshot (in All recordings, editable, shareable),
+// linked to this recording and moment. Its image goes inline into this recording's GitHub issues.
+
+function frameToast(state, text, actions = []) {
+  let el = $('frameToast');
+  if (!el) {
+    el = h('div', { class: 'frame-toast', id: 'frameToast', role: 'status', 'aria-live': 'polite' });
+    document.body.append(el);
+  }
+  clearTimeout(frameToast.timer);
+  el.dataset.state = state;
+  el.replaceChildren(icon(state === 'busy' ? 'spinner-gap' : state === 'error' ? 'warning-circle' : 'check'), h('span', { class: 'ft-text' }, text), ...actions);
+  el.hidden = false;
+  el.classList.remove('out');
+  if (state !== 'busy') {
+    frameToast.timer = setTimeout(() => {
+      el.classList.add('out');
+      setTimeout(() => (el.hidden = true), 200);
+    }, state === 'error' ? 6000 : 9000);
+  }
+}
+
+async function captureFrame() {
+  const btn = $('frameBtn');
+  if (driveMode || isShot() || fallbackActive || !btn || btn.disabled) return;
+  if (!video.videoWidth) return frameToast('error', 'The video is not ready yet.');
+  video.pause();
+  const at = video.currentTime;
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!blob) return frameToast('error', "Couldn't read this frame.");
+  btn.disabled = true;
+  frameToast('busy', `Saving frame at ${fmt(at)}…`);
+  try {
+    // The page that was open at that moment, for the screenshot's details.
+    const nav = lists.steps.filter((e) => e.type === 'navigation' && e.url && offsetOf(e) <= at + 0.05).at(-1);
+    const created = await ghJson(`/api/recordings/${encodeURIComponent(id)}/frames`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ at, pageUrl: nav?.url || rec.meta?.startUrl }),
+    });
+    for (const part of ['original', 'image']) {
+      const res = await fetch(`/api/recordings/${encodeURIComponent(created.id)}/${part}`, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: blob });
+      if (!res.ok) throw new Error(`Couldn't save the frame (${res.status})`);
+    }
+    await ghJson(`/api/recordings/${encodeURIComponent(created.id)}/finalize-shot?now=1`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: `${rec.meta?.title || 'Recording'} · ${fmt(at)}`, kind: rec.report?.kind || rec.meta?.kind || 'bug', width: canvas.width, height: canvas.height }),
+    });
+    rec.frames = [...(rec.frames || []), created.id];
+    rec.frameShots = [...(rec.frameShots || []), { id: created.id, at, viewerUrl: created.viewerUrl, fileId: null }].sort((a, b) => a.at - b.at);
+    renderInfo();
+    renderReport();
+    // The Drive copy (for inline images in issues) appears a moment later.
+    setTimeout(async () => {
+      const r = await fetchRecording().catch(() => null);
+      if (r?.frameShots) {
+        rec.frameShots = r.frameShots;
+        renderReport();
+      }
+    }, 6000);
+    const annotate = h('button', { type: 'button', class: 'ft-btn' }, 'Annotate');
+    annotate.addEventListener('click', async () => {
+      if (!(await openInEditor(created.id))) window.open(created.viewerUrl, '_blank', 'noopener');
+    });
+    const view = h('a', { class: 'ft-btn', href: created.viewerUrl, target: '_blank', rel: 'noopener' }, 'Open');
+    frameToast('done', `Frame at ${fmt(at)} saved`, [annotate, view]);
+  } catch (err) {
+    frameToast('error', err.message || "Couldn't save the frame.");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+if (!driveMode) $('frameBtn').addEventListener('click', captureFrame);
 
 // ---------------------------------------------------------------- keyboard
 
@@ -1980,6 +2081,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowRight' || e.key === 'l') seek(video.currentTime + 5);
   else if (e.key === 'f') toggleFull();
   else if (e.key === 'm') video.muted = !video.muted;
+  else if (e.key === 's' && !driveMode) captureFrame();
 });
 
 load();
